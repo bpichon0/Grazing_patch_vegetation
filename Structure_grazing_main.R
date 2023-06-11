@@ -2,8 +2,7 @@ rm(list=ls())
 source("./Structure_grazing_function.R")
 
 # ---------------------- Step 0: Sensitivity of change in cover ---- 
-
-# >> 1) How do spatial statistics change with uncertainty of cover ----
+## >> 1) How do spatial statistics change with uncertainty of cover ----
 
 d=tibble();thresh=0.01
 n_site=100
@@ -106,7 +105,7 @@ ggsave("../Figures/PCA_error.pdf",p,width = 11,height = 5)
 
 
 
-# >> 2) Change in parameter inferred ----
+## >> 2) Change in parameter inferred ----
 
 NA_kept=250
 id=1
@@ -336,9 +335,8 @@ ggsave("../Figures/Change_parameters_no_info_cover.pdf",p,width = 8,height = 4)
 
 
 
-# ---------------------- Step 1: Spatial structure in relation to grazing ----
-
-# >> 1) Transforming images into binary matrices ----
+# ---------------------- Step 1: Computing the spatial metrics ----
+## >> 1) Transforming images into binary matrices ----
 
 info_kmean=read.table("../Data/Landscapes/Kmean_clust_info.csv",sep=",",header = T)%>%
   filter(., status=="kept",Size!=200) #keeping the kept sites
@@ -367,22 +365,471 @@ for (id in 1:nrow(info_kmean)){ #for each kept landscape
 }
 
 
-# >> 2) Computing the metrics on the binary landscapes (of Biodesert only) ----
+## >> 2) Computing the metrics on the binary landscapes (of Biodesert only) ----
 
+## Computing the metrics
 
-d=tibble()
-list_f=list.files("../Data/Landscapes/Binary_landscapes/",".csv")
+dir.create("../Data/Metrics",showWarnings = F)
 
-for (k in list_f[grep(list_f,pattern = "biodesert")]){ #we only compute spatial stats on Biodesert sites
+Compute_all_metrics_biodesert=function(k){
   
   landscape=as.matrix(read.table(paste0("../Data/Landscapes/Binary_landscapes/",k),sep=","))
   name=gsub(".csv","",k)
   name_dataset=strsplit(k,"_")[[1]][1]
-  id_site=as.numeric(strsplit(k,"_")[[1]][3])
-  d=rbind(d,tibble(name=name,res=Get_spatial_resolution(landscape)))
   
+  if (any(grep("cropped",k))){
+    id_site=as.numeric(strsplit(k,"_")[[1]][4])
+    sub_id=as.numeric(gsub(".csv","",(strsplit(k,"_")[[1]][5])))
+  }else{
+    id_site=as.numeric(strsplit(k,"_")[[1]][3])
+    sub_id=as.numeric(gsub(".csv","",(strsplit(k,"_")[[1]][4])))
+  }
+  
+  slope=d_biodesert$`SLOPE-ALOS30`[which(d_biodesert$ID==id_site)]
+  
+  d=Get_sumstat(landscape,slope = slope)%>% #Computing all summary statistics
+    add_column(.,Full_name=name,Resolution=Get_spatial_resolution(landscape), #full name & spatial resolution
+               Site_ID=id_site, # ID of the site
+               Sub_id=sub_id) # id of the sublandscape taken at a given site
+  
+  write.table(d,paste0("../Data/Metrics/Metric_",name,".csv"),sep=";")  
+}
+
+list_f=list.files("../Data/Landscapes/Binary_landscapes/",".csv")
+
+
+library(parallel)
+mclapply(list_f[grep(list_f,pattern = "biodesert")],Compute_all_metrics_biodesert,mc.cores = 5)
+
+
+## aggregating the metrics into a df
+
+list_f=list.files("../Data/Metrics/",".csv")
+d=tibble()
+for (k in list_f){d=rbind(d,read.table(paste0("../Data/Metrics/",k),sep=";",header = T))}
+
+d=d%>%
+  add_column(.,
+             Grazing=sapply(1:nrow(.),function(x){return(d_biodesert$GRAZ[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Aridity=sapply(1:nrow(.),function(x){return(d_biodesert$ARIDITY[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Nurse=sapply(1:nrow(.),function(x){return(d_biodesert$Nurse[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Slope=sapply(1:nrow(.),function(x){return(d_biodesert$`SLOPE-ALOS30`[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Elevation=sapply(1:nrow(.),function(x){return(d_biodesert$`ELE-ALOS30`[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Sp_richness=sapply(1:nrow(.),function(x){return(d_biodesert$SR[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Lattitude=sapply(1:nrow(.),function(x){return(d_biodesert$Lat_decimal[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Longitude=sapply(1:nrow(.),function(x){return(d_biodesert$Long_decimal[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Type_veg=sapply(1:nrow(.),function(x){return(d_biodesert$VEG[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Herbivores=sapply(1:nrow(.),function(x){return(d_biodesert$Dominant_Livestock[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Org_C=sapply(1:nrow(.),function(x){return(d_biodesert$`ORC veg`[which(d_biodesert$ID==.$Site_ID[x])]- #difference between plant and bare soil for organic carbon
+                                                         d_biodesert$`ORC b`[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Sand=sapply(1:nrow(.),function(x){return(d_biodesert$`SAC veg`[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Shannon_div=sapply(1:nrow(.),function(x){return(d_biodesert$DIV_SHQ[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Simpson_div=sapply(1:nrow(.),function(x){return(d_biodesert$DIV_SIQ[which(d_biodesert$ID==.$Site_ID[x])])}),
+             Woody=sapply(1:nrow(.),function(x){return(d_biodesert$RWCQ[which(d_biodesert$ID==.$Site_ID[x])])})
+  )%>%
+  mutate(., Type_veg=recode_factor(Type_veg,"1"="Grassland","2"="Shrubland","3"="Forest","1_2"="Grass_Shrub"))
+
+
+#Then, we extract summarized climatic variables using a PCA on all climatic variables
+
+clim_variables=colnames(d_biodesert)[38:58]
+res.comp=imputePCA(d_biodesert[,which(colnames(d_biodesert) %in% clim_variables)],ncp=4,scale = T) 
+
+if ("completeObs" %in% names(res.comp)){
+  res.pca=PCA(res.comp$completeObs, ncp = 4,  graph=F)
+}else {
+  res.pca=PCA(res.comp, ncp = 4,  graph=F)
+}
+
+fviz_eig(res.pca, addlabels = TRUE, ylim = c(0, 50))
+
+#We extract the first 4 ones
+
+d=d%>%
+  add_column(.,
+             Clim1=sapply(1:nrow(.),function(x){return(res.pca$ind$coord[which(d_biodesert$ID==.$Site_ID[x]),1])}),
+             Clim2=sapply(1:nrow(.),function(x){return(res.pca$ind$coord[which(d_biodesert$ID==.$Site_ID[x]),2])}),
+             Clim3=sapply(1:nrow(.),function(x){return(res.pca$ind$coord[which(d_biodesert$ID==.$Site_ID[x]),3])}),
+             Clim4=sapply(1:nrow(.),function(x){return(res.pca$ind$coord[which(d_biodesert$ID==.$Site_ID[x]),4])})
+             )
+
+write.table(d%>%dplyr::rename(., fractal_dim=factal_dim),
+            "../Data/Spatial_structure_grazing.csv",sep=";")
+
+## >> 3) Spatial metrics on simulations ----
+
+#simulating and computing spatial statistics
+param_space=rbind(tibble(b=seq(0,.8,.03),g0=0,Driver="Aridity"),
+                  tibble(b=.8,g0=seq(0,0.5,.02),Driver="Grazing"))
+
+d_sim=tibble()
+param=Get_classical_param(g0=0)
+
+for (k in 1:nrow(param_space)){
+  print(k)
+  
+  param$g0=param_space$g0[k]
+  param$b=param_space$b[k]
+  
+  ini_land=Get_initial_lattice()
+  out_model=Run_spatial_model(params = param,ini=ini_land)
+  
+  d_sim=rbind(d_sim,Get_sumstat(out_model$State==1)%>%
+                add_column(., g0=param_space$g0[k],b=param_space$b[k],Driver=param_space$Driver[k]))
+}
+write.table(d_sim,"../Data/Spatial_structure_simulations.csv",sep=";")
+
+
+# ---------------------- Step 2: Direct & interactive effects of grazing  ----
+
+d_all=d_all2=tibble()#for keeping all informations
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  add_column(., Long_sin=sin(.$Longitude),Long_cos=cos(.$Longitude))
+
+d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+d_perim=d_data[!is.na(d_data$perim_area_scaling),]
+
+#correlations between predictors ?
+ggplot(cor(d_data[,c("Sand","Clim1","Clim2","Clim3","Clim4","Org_C","Woody",
+                     "Grazing","rho_p","Long_cos","Long_sin","Lattitude","Slope","Elevation")],
+           use =  "na.or.complete")%>%
+         melt(.))+geom_tile(aes(Var1,Var2,fill=value))+
+  scale_fill_gradient2(low="red","white","blue")
+
+#type of relationships
+
+pdf("../Figures/Step1_Going_big/Relationships_predictors_Y.pdf",width = 7,height = 6)
+for (k in c("perim_area_scaling","fmax_psd","Cond_H","PL_expo")){
+  
+  print(ggplot(d_data%>%melt(.,measure.vars = k)%>%dplyr::rename(., Variable1=variable,Value1=value)%>%
+                 melt(., measure.vars=c("Clim1","Clim2","Clim3","Clim4","Org_C","Sand","Woody","Slope","Elevation")))+
+          geom_point(aes(x=value,Value1),color="gray",alpha=.5,size=1)+
+          geom_smooth(aes(x=value,Value1),se = F)+
+          facet_wrap(.~variable,scales="free")+the_theme+
+          labs(y=k))
   
 }
+dev.off()
+
+## >> perim area scaling ----
+
+model_perim_scaling  = lmer(perim_area_scaling ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                            + Clim1 + Clim2 + Clim3 + Clim4 + Grazing +
+                            + Woody + Woody*Grazing
+                            + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                            + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                            + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                            + (1|Site_ID)
+                            , data = d_data, na.action = "na.omit" ,REML ="FALSE")
+
+#potential outliers
+mcp.fnc(model_perim_scaling)
+
+#we remove it
+rm.outliers = romr.fnc(model_perim_scaling, d_perim, trim=2.5)
+d_data_out = rm.outliers$data
+
+model_perim_scaling = lmer(perim_area_scaling ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                           + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                           + Woody + Woody*Grazing
+                           + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                           + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                           + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                           + (1|Site_ID)
+                           , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+#Reduce the complexity of the model using a step function. Remove the random effect to avoid error messages
+stepAIC(lm(formula(model_perim_scaling,fixed.only=TRUE),
+           data=eval(getCall(model_perim_scaling)$data)))
+
+
+#do some model selection
+dd_perim_model=dredge(model_perim_scaling, subset = ~ Slope & Elevation &
+                       Long_cos & Long_sin & Lattitude &
+                       dc(Woody & Grazing, Woody : Grazing) & 
+                       dc(Clim1 & Grazing, Clim1 : Grazing) & 
+                       dc(Clim2 & Grazing, Clim2 : Grazing) & 
+                       dc(Clim3 & Grazing, Clim3 : Grazing) & 
+                       dc(Clim4 & Grazing, Clim4 : Grazing) & 
+                       dc(rho_p & Grazing, rho_p : Grazing) &
+                       dc(Org_C & Grazing, Org_C : Grazing) &
+                       dc(Sand  & Grazing, Sand  : Grazing) &
+                       dc(Type_veg & Grazing, Type_veg : Grazing),
+                     options(na.action = "na.fail") )
+
+
+#extract the result of model selection
+result_perim=summary(model.avg(dd_perim_model, subset = delta < 2))
+
+#Get the importance of each metric
+importance_fractal=sw(result_perim)
+
+#Get R� of the full model
+model_perim_scaling=lmer(perim_area_scaling ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                         + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                         + Woody + Woody*Grazing
+                         + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                         + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                         + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                         + (1|Site_ID)
+                         , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+
+R2_perim=r.squaredGLMM(model_perim_scaling)
+
+d_all=rbind(d_all,cbind(tibble(Sp_stat="perim_area_scaling",
+                               N_outliers=13,R2m=R2_perim[1],R2C=R2_perim[2]),
+                               Aggregate_importance(importance_fractal)))
+
+
+#bootstraping slopes
+
+boot_perim=bootstrap(model_perim_scaling,.f=fixef,type = "parametric",200)
+d_all2=rbind(d_all2,as_tibble(boot_perim$stats)%>%filter(., term!="(Intercept)")%>%
+               add_column(Stat="perim_area_scaling")%>%dplyr::select(., -bias,-rep.mean))
+
+
+## >> fmaxpatch ----
+
+
+model_fmax  = lmer(fmax_psd ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                   + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                   + Woody + Woody*Grazing
+                   + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                   + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                   + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                   + (1|Site_ID)
+                   , data = d_data, na.action = "na.omit" ,REML ="FALSE")
+
+#potential outliers
+mcp.fnc(model_fmax)
+
+#we remove it
+rm.outliers = romr.fnc(model_fmax, d_data, trim=2.5)
+d_data_out = rm.outliers$data
+
+model_fmax = lmer(fmax_psd ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                  + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                  + Woody + Woody*Grazing
+                  + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                  + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                  + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                  + (1|Site_ID)
+                  , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+#Reduce the complexity of the model using a step function. Remove the random effect to avoid error messages
+stepAIC(lm(formula(model_fmax,fixed.only=TRUE),
+           data=eval(getCall(model_perim_scaling)$data)))
+
+
+#do some model selection
+dd_fmax_model=dredge(model_fmax, subset = ~ Slope & Elevation &
+                       Long_cos & Long_sin & Lattitude &
+                       dc(Woody & Grazing, Woody : Grazing) & 
+                       dc(Clim1 & Grazing, Clim1 : Grazing) & 
+                       dc(Clim2 & Grazing, Clim2 : Grazing) & 
+                       dc(Clim3 & Grazing, Clim3 : Grazing) & 
+                       dc(Clim4 & Grazing, Clim4 : Grazing) & 
+                       dc(rho_p & Grazing, rho_p : Grazing) &
+                       dc(Org_C & Grazing, Org_C : Grazing) &
+                       dc(Sand  & Grazing, Sand  : Grazing) &
+                       dc(Type_veg & Grazing, Type_veg : Grazing),
+                     options(na.action = "na.fail") )
+
+
+#extract the result of model selection
+result_fmax=summary(model.avg(dd_fmax_model, subset = delta < 2))
+
+#Get the importance of each metric
+importance_fmax=sw(result_fmax)
+
+#Get R� of the full model
+model_fmax=lmer(fmax_psd ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                + Woody + Woody*Grazing
+                + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                + (1|Site_ID)
+                , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+R2_fmax=r.squaredGLMM(model_fmax)
+
+d_all=rbind(d_all,cbind(tibble(Sp_stat="fmax",N_outliers=7,R2m=R2_fmax[1],R2C=R2_fmax[2]),Aggregate_importance(importance_fmax)))
+
+#bootstraping slopes
+
+boot_perim=bootstrap(model_fmax,.f=fixef,type = "parametric",200)
+d_all2=rbind(d_all2,as_tibble(boot_perim$stats)%>%
+               add_column(Stat="fmax")%>%dplyr::select(., -bias,-rep.mean))
+
+
+## >> Conditional entropy ----
+
+model_Cond_H  = lmer(Cond_H ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                            + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                            + Woody + Woody*Grazing
+                            + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                            + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                            + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                            + (1|Site_ID)
+                            , data = d_data, na.action = "na.omit" ,REML ="FALSE")
+
+#potential outliers
+mcp.fnc(model_Cond_H)
+
+#we remove it
+rm.outliers = romr.fnc(model_Cond_H, d_data, trim=2.5)
+d_data_out = rm.outliers$data
+
+model_Cond_H = lmer(Cond_H ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                           + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                           + Woody + Woody*Grazing
+                           + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                           + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                           + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                           + (1|Site_ID)
+                           , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+#Reduce the complexity of the model using a step function. Remove the random effect to avoid error messages
+stepAIC(lm(formula(model_Cond_H,fixed.only=TRUE),
+           data=eval(getCall(model_Cond_H)$data)))
+
+#do some model selection
+dd_condH_model=dredge(model_Cond_H, subset = ~ Slope & Elevation &
+                        Long_cos & Long_sin & Lattitude &
+                        dc(Woody & Grazing, Woody : Grazing) & 
+                        dc(Clim1 & Grazing, Clim1 : Grazing) & 
+                        dc(Clim2 & Grazing, Clim2 : Grazing) & 
+                        dc(Clim3 & Grazing, Clim3 : Grazing) & 
+                        dc(Clim4 & Grazing, Clim4 : Grazing) & 
+                        dc(rho_p & Grazing, rho_p : Grazing) &
+                        dc(Org_C & Grazing, Org_C : Grazing) &
+                        dc(Sand  & Grazing, Sand  : Grazing) &
+                        dc(Type_veg & Grazing, Type_veg : Grazing),
+                      options(na.action = "na.fail") )
+
+
+#extract the result of model selection
+result_condH=summary(model.avg(dd_condH_model, subset = delta < 2))
+
+#Get the importance of each metric
+importance_condH=sw(result_condH)
+
+#Get R� of the best model
+model_Cond_H=lmer(Cond_H ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                         + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                         + Woody + Woody*Grazing
+                         + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                         + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                         + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                         + (1|Site_ID)
+                         , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+R2_condH=r.squaredGLMM(model_Cond_H)
+
+d_all=rbind(d_all,cbind(tibble(Sp_stat="Cond_H",N_outliers=14,R2m=R2_condH[1],R2C=R2_condH[2]),Aggregate_importance(importance_condH)))
+
+
+#bootstraping slopes
+
+boot_perim=bootstrap(model_Cond_H,.f=fixef,type = "parametric",200)
+d_all2=rbind(d_all2,as_tibble(boot_perim$stats)%>%
+               add_column(Stat="Cond_H")%>%dplyr::select(., -bias,-rep.mean))
+
+## >> best slope on the psd ----
+
+d_pl=d_data%>%filter(., !is.na(PL_expo))
+
+model_PL  = lmer(PL_expo ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                   + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                   + Woody + Woody*Grazing
+                   + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                   + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                   + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                   + (1|Site_ID)
+                   , data = d_pl, na.action = "na.omit" ,REML ="FALSE")
+
+#potential outliers
+mcp.fnc(model_PL)
+
+#we remove it
+rm.outliers = romr.fnc(model_PL, d_pl, trim=2.5)
+d_data_out = rm.outliers$data
+
+model_PL = lmer(PL_expo ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                  + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                  + Woody + Woody*Grazing
+                  + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                  + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                  + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                  + (1|Site_ID)
+                  , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+#Reduce the complexity of the model using a step function. Remove the random effect to avoid error messages
+stepAIC(lm(formula(model_PL,fixed.only=TRUE),
+           data=eval(getCall(model_perim_scaling)$data)))
+
+#rebuilding the model
+model_PL = lmer(PL_expo ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+                  + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+                  + Woody + Woody*Grazing
+                  + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+                  + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+                  + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+                  + (1|Site_ID)
+                  , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+
+#do some model selection
+dd_PL_model=dredge(model_PL, subset = ~ Slope & Elevation &
+                     Long_cos & Long_sin & Lattitude &
+                     dc(Woody & Grazing, Woody : Grazing) & 
+                     dc(Clim1 & Grazing, Clim1 : Grazing) & 
+                     dc(Clim2 & Grazing, Clim2 : Grazing) & 
+                     dc(Clim3 & Grazing, Clim3 : Grazing) & 
+                     dc(Clim4 & Grazing, Clim4 : Grazing) & 
+                     dc(rho_p & Grazing, rho_p : Grazing) &
+                     dc(Org_C & Grazing, Org_C : Grazing) &
+                     dc(Sand  & Grazing, Sand  : Grazing) &
+                     dc(Type_veg & Grazing, Type_veg : Grazing),
+                     options(na.action = "na.fail") )
+
+
+#extract the result of model selection
+result_PL=summary(model.avg(dd_PL_model, subset = delta < 2))
+
+#Get the importance of each metric
+importance_PL=sw(result_PL)
+
+#Get R� of the best model
+model_PL=lmer(PL_expo ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+              + Clim1 + Clim2 + Clim3 + Clim4 + Grazing
+              + Woody + Woody*Grazing
+              + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+              + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+              + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+              + (1|Site_ID)
+              , data = d_data_out, na.action = na.fail,REML ="FALSE")
+
+R2_PL=r.squaredGLMM(model_PL)
+
+d_all=rbind(d_all,cbind(tibble(Sp_stat="PL",N_outliers=10,R2m=R2_PL[1],R2C=R2_PL[2]),Aggregate_importance(importance_PL)))
+
+
+#bootstraping slopes
+
+boot_perim=bootstrap(model_PL,.f=fixef,type = "parametric",200)
+d_all2=rbind(d_all2,as_tibble(boot_perim$stats)%>%
+               add_column(Stat="PL")%>%dplyr::select(., -bias,-rep.mean))
+
+
+#wrinting csv
+
+write.table(d_all,"../Data/Step1_Going_big/Importance.csv",sep=";")
+write.table(d_all2,"../Data/Step1_Going_big/Estimators_model.csv",sep=";")
+
 
 
 
