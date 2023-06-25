@@ -1,6 +1,6 @@
 # Code for running XXXX
 
-Contact: BenoÃ®t Pichon, **benoit.pichon0@gmail.com**
+Contact: Benoît Pichon, **benoit.pichon0@gmail.com**
 
 The main script ("Structure_grazing_main.R") is organized in independant chunk of codes. 
 The different steps (press Alt+O to see them), are indicated.
