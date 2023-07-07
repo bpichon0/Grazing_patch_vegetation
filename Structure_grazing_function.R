@@ -559,6 +559,7 @@ Closer_to_normality=function(df){
            sd_psd=log(sd_psd)+1,
            median_psd=log(median_psd)+1,
            core_area=log(core_area)+1,
+           Org_C=log(Org_C+5)+1,
            Slope=log(Slope+1)+1)
   
   return(df)
@@ -784,7 +785,7 @@ Organize_df=function(df,type="predictor"){
                              "Clim3:Grazing","Clim4:Grazing","Grazing:Type_vegShrubland",
                              "Grazing:Type_vegGrassland","Grazing:Type_vegGrass_Shrub",
                              "Grazing:Org_C","Grazing:Sand","Grazing","Grazing:Woody")) return("Grazing")
-        if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geo")
+        if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geography")
       })))%>%
       mutate(., term=recode_factor(term,
                                    "rho_p"="Cover",
@@ -805,7 +806,7 @@ Organize_df=function(df,type="predictor"){
                                    "Grazing:Sand"="Grazing * Sand",
                                    "Grazing:Woody"="Grazing * Woody",
                                    "Grazing:rho_p"="Grazing * Cover"))%>%
-      dplyr::arrange(., Type_pred,observed)%>%
+      dplyr::arrange(., Type_pred,Median)%>%
       dplyr::arrange(.,-dplyr::row_number())%>%
       add_column(., Order_f=1:nrow(.))%>%
       mutate(.,term = fct_reorder(term, Order_f))
@@ -821,7 +822,7 @@ Organize_df=function(df,type="predictor"){
                              "Clim3:Grazing","Clim4:Grazing","Grazing:Type_vegShrubland",
                              "Grazing:Type_vegGrassland","Grazing:Type_vegGrass_Shrub",
                              "Grazing:Org_C","Grazing:Sand","Grazing","Grazing:Woody")) return("Grazing")
-        if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geo")
+        if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geography")
       })))
     
   }
@@ -986,7 +987,7 @@ Get_indirect_effects_grazing=function(summary_sem){
 Perform_PCA_spatial_struc=function(df){
   
   #Performing PCA on the spatial structure metrics 
-  struct_variables=colnames(df)[c(7:9,14:16,20:25)]
+  struct_variables=colnames(df)[c(8:9,11,14:15,20,24)]
   res.comp=imputePCA(df[,which(colnames(df) %in% struct_variables)],ncp=4,scale = T) 
   
   if ("completeObs" %in% names(res.comp)){
@@ -1013,21 +1014,76 @@ Perform_PCA_spatial_struc=function(df){
 Rename_spatial_statistics=function(df){
   return(df%>%
            mutate(., Stat=recode_factor(Stat,
-                                        "Cond_H"="Conditional \n entropy",
+                                        "Cond_H"="Conditional entropy",
                                         "contig"="Contiguity",
-                                        "core_area_land"="% landscape covered \n by core",
-                                        "core_area"="Mean patch \n core area",
+                                        "core_area_land"="% landscape covered by core",
+                                        "core_area"="Mean patch core area",
                                         "division"="Division",
                                         "flow_length"="Bare soil connectivity",
                                         "fractal_dim"="Fractal dimension",
-                                        "perim_area_scaling"="Fractal scaling \n area, perim.",
+                                        "perim_area_scaling"="Fractal scaling area, perim.",
                                         "PLR"="PLR",
-                                        "PL_expo"="Power-law exp. \n of the PSD",
+                                        "PL_expo"="Power-law exp. of the PSD",
                                         "Struct1"="PC 1 spa. struc.",
                                         "Struct2" = "PC 2 spa. struc.",
                                         "Spectral_ratio"="Spectral ratio",
                                         "fmax_psd"="log (largest patch)")))
 }
+
+Get_data_without_outliers=function(stat,with_cover=T){
+  
+  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+    Closer_to_normality(.)
+  
+  d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = 
+    apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+  
+  d_data=Perform_PCA_spatial_struc(d_data)
+  
+  
+  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
+    filter(., !is.na(value))
+  
+  
+  if (with_cover){
+    
+    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+    
+  } else{
+    
+    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+  }
+  
+  model_spa_stat  = lmer(formula_mod, d_data_mod,
+                         na.action = na.fail ,REML ="FALSE")
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  model_spa_stat = lmer(formula_mod, data = d_data_out, 
+                        na.action = na.fail,REML ="FALSE")
+  return(d_data_out)
+}
+
+Filter_relevant_stats=function(df){
+  return(df%>%filter(., Stat %in% c("PLR","PL_expo","fmax_psd","flow_length",
+                                    "perim_area_scaling","core_area","contig",
+                                    "core_area_land")))
+}
+
 
 # 5) Model functions ----
 

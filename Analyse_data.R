@@ -3,6 +3,8 @@ source("./Structure_grazing_function.R")
 
 # ---------------- Step 0: Preliminary analyses ----
 
+
+
 ## >> Distributions of metrics ----
 d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")
 
@@ -616,12 +618,162 @@ ggplot(d_data%>%melt(., measure.vars = colnames(d_data)[52:55])%>%
 
 
 
-# ---------------- Step 1: Understanding grazing ----
+# ---------------- Step 1: Understanding grazing on vegetation cover----
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+
+d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = 
+  apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+
+d_data=Perform_PCA_spatial_struc(d_data)
+
+formula_mod=formula(formula_(paste("rho_p ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing 
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+
+
+
+model_cover  = lmer(formula_mod, d_data,
+                       na.action = na.fail ,REML ="FALSE")
+
+#we remove potential outliers
+rm.outliers = romr.fnc(model_cover, d_data, trim=2.5)
+d_data_out = rm.outliers$data
+
+model_cover = lmer(formula_mod, data = d_data_out, 
+                      na.action = na.fail,REML ="FALSE")
+
+# #do some model selection
+select_model=dredge(model_cover, subset = ~ Slope & Elevation &
+                      Long_cos & Long_sin & Lattitude &
+                      dc(Woody & Grazing, Woody : Grazing) &
+                      dc(Clim1 & Grazing, Clim1 : Grazing) &
+                      dc(Clim2 & Grazing, Clim2 : Grazing) &
+                      dc(Clim3 & Grazing, Clim3 : Grazing) &
+                      dc(Clim4 & Grazing, Clim4 : Grazing) &
+                      dc(rho_p & Grazing, rho_p : Grazing) &
+                      dc(Org_C & Grazing, Org_C : Grazing) &
+                      dc(Sand  & Grazing, Sand  : Grazing) &
+                      dc(Type_veg & Grazing, Type_veg : Grazing),
+                    options(na.action = "na.fail") )
+
+#best model
+model_cover=MuMIn::get.models(select_model, subset = delta == 0)[[1]]
+saveRDS(model_cover,paste0("../Data/Step1_Understanding_grazing/Keep_models/Mod_cover_TRUE.rds"))
+
+R2_mod=r.squaredGLMM(model_cover)
+boot_mod=bootstrap(model_cover,.f=fixef,type = "parametric",500)
+
+#Merge in a df
+d_pred=tibble(Median=apply(boot_mod$replicates[,-1],2,median),
+       q1=apply(boot_mod$replicates[,-1],2,quantile,.025), 
+       q3=apply(boot_mod$replicates[,-1],2,quantile,.975),
+       pvalue=apply(boot_mod$replicates[,-1],2,twoside_pvalue),
+       term=colnames(boot_mod$replicates)[-1],
+       Stat="Cover",
+       R2m=R2_mod[1])
+
+loc_pval=.05+max(d_pred%>% #localization of pvalues in the plot
+                   Organize_df(., "predictor")%>%
+                   dplyr::select(.,q3)%>%dplyr::pull(.))
+
+p1_1=ggplot(d_pred%>%
+              filter(., term!="Type, both")%>%
+              Organize_df(., "predictor")%>%
+              add_column(., Is_signif_pval=sapply(1:nrow(.),function(x){return(is_signif(.$pvalue[x]))})))+
+  geom_pointrange(aes(x=Median,y=term,xmin=q1,xmax=q3,color=Type_pred))+
+  geom_text(aes(x=loc_pval,y=term,label=Is_signif_pval))+
+  geom_hline(yintercept = c(5.5,17.5,21.5,25.5),linetype=9)+
+  the_theme+
+  labs(x="",y="",color="")+
+  geom_vline(xintercept = 0,linetype=9)+
+  scale_color_manual(values=c("Geography"="#FFB15B","Grazing"="#F3412A",
+                              "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
+  theme(legend.position = "none")
+
+p1_2=ggplot(d_pred%>%
+              add_column(., xplot=0)%>%
+              Organize_df(., "bar")%>%
+              group_by(., Type_pred,Stat,xplot)%>%
+              dplyr::summarise(., sum_effect=sum(abs(Median)),.groups = "keep")%>%
+              mutate(., sum_effect=sum_effect/sum(sum_effect)))+
+  geom_bar(aes(x=xplot,y=sum_effect,fill=Type_pred),stat="identity",width = .05)+
+  geom_text(aes(x=0,y=1.05,label=paste0("R� \n = \n ",unique(round(d_pred$R2m,2)))),size=3)+
+  the_theme+
+  labs(y="Relative effects of estimates",fill="")+
+  scale_fill_manual(values=c("Geography"="#FFB15B","Grazing"="#F3412A",
+                             "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),axis.ticks.x = element_blank(),
+        axis.line.x = element_blank())
+
+p1=ggarrange(
+  ggarrange(p1_1,p1_2+theme(legend.position = "none"),widths = c(1,.2),labels = letters[1:2]),
+  get_legend(p1_2),nrow=2,heights = c(1,.15)
+)
+
+#extracting residuals of cover against grazing
+resid_mod=visreg::visreg(fit = model_cover,xvar="Grazing",plot=F) 
+
+p2=ggplot(NULL)+
+  geom_jitter(data=resid_mod$res,
+              aes(Grazing,visregRes),width = .1,color="gray",alpha=.5)+
+  geom_pointrange(data=resid_mod$res%>%
+                    dplyr::group_by(., Grazing)%>%
+                    dplyr::summarise(., .groups = "keep",
+                                     q1=quantile(visregRes,.25),q3=quantile(visregRes,.75),q2=median(visregRes)),
+                  aes(x=Grazing,y=q2,ymin=q1,ymax=q3),color="black")+
+  the_theme+
+  scale_color_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  scale_fill_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  labs(x="Grazing",y="Residuals of cover")
+
+
+#extracting residuals of cover against woody
+resid_mod=visreg::visreg(fit = model_cover,xvar="Woody",plot=F) 
+
+p3=ggplot(resid_mod$res)+
+  geom_point(aes(Woody,visregRes),color="gray30",alpha=.2)+
+  geom_smooth(aes(Woody,visregRes),color="black",fill="gray",method = "lm",level=.95)+
+  the_theme+
+  scale_color_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  scale_fill_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  labs(x="% woody cover",y="Residuals of cover")
+
+#extracting residuals of cover against grazing
+resid_mod=visreg::visreg(fit = model_cover,xvar="Org_C",by="Grazing",plot=F) 
+resid_mod$res$Grazing=rep(0:3,as.vector(table(d_data_out$Grazing))) #correcting vigreg output
+
+p4=ggplot(resid_mod$res%>%
+         mutate(., Grazing=as.character(Grazing)))+
+  geom_point(aes(Org_C,visregRes),color="gray30",alpha=.2)+
+  geom_smooth(aes(Org_C,visregRes,fill=Grazing,color=Grazing),method = "lm",level=.95)+
+  the_theme+
+  scale_color_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  scale_fill_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"))+
+  labs(x="Facilitation",y="Residuals on cover")
+
+ggsave(paste0("../Figures/Final_figs/SI/Predictors_COVER.pdf"),
+       ggarrange(p1,ggarrange(ggarrange(p2,p3,p4+theme(legend.position="none"),ncol=3),
+                              get_legend(p4),nrow=2,heights = c(1,.3)),
+                 nrow=2,heights = c(1, .3)),
+       width = 6,height = 9)
+
+
+
+
+
+# ---------------- Step 2: Understanding grazing on spatial structure ----
 
 ## >> Importance ----
 dir.create("../Figures/Step1_Understanding_grazing/Importance",showWarnings = F)
 
-for (with_interactions in c("_nointer","","_grazing_square")){
+for (with_interactions in c("_nointer","","_grazing_square","_grazing_no_constrains")){
   
   d_all=read.table(paste0("../Data/Step1_Understanding_grazing/Importance",with_interactions,".csv"),sep=";")
   
@@ -692,11 +844,10 @@ d_R2=read.table(paste0("../Data/Step1_Understanding_grazing/Importance.csv"),sep
   Rename_spatial_statistics(.)
 
 d_all2=read.table(paste0("../Data/Step1_Understanding_grazing/Estimators_model.csv"),sep=";")%>%
-  dplyr::rename(., observed=Median)%>%
   filter(., With_cover==T)%>%
   Organize_df(., "bar")%>%
   group_by(., Type_pred,Stat)%>%
-  dplyr::summarise(., sum_effect=sum(abs(observed)),.groups = "keep")%>%
+  dplyr::summarise(., sum_effect=sum(abs(Median)),.groups = "keep")%>%
   Rename_spatial_statistics(.)%>%group_by(., Stat)%>%
   dplyr::summarise(., .groups="keep",sum_effect=sum_effect/sum(sum_effect),Type_pred=Type_pred)
 
@@ -706,7 +857,7 @@ p=ggplot(d_all2)+
   geom_text(data=d_R2,aes(y=Stat,x=8,label=paste0("r� = ",round(R2m,2))))+
   the_theme+
   labs(x="Importance (%)",fill="")+
-  scale_fill_manual(values=c("Geo"="#FFB15B","Grazing"="#F3412A",
+  scale_fill_manual(values=c("Geography"="#FFB15B","Grazing"="#F3412A",
                              "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
   theme(axis.title.y = element_blank(),
         axis.ticks.y = element_blank(),
@@ -720,62 +871,61 @@ ggsave("../Figures/Step1_Understanding_grazing/Importance/Importance_grazing_eff
 
 ## >> Direct & interactions: LME models ----
 
-for (with_interactions in c("_nointer","","_grazing_square")){
+for (with_interactions in c("","_nointer","_grazing_square")){
   
-  d_all=read.table(paste0("../Data/Step1_Understanding_grazing/Importance",with_interactions,".csv"),sep=";")%>%
-    add_column(., With_cover=rep(c(T,F),each=nrow(.)/2))%>%
-    filter(., With_cover==T)
+  for (cover in c(1,0)){
+
+    d_all=read.table(paste0("../Data/Step1_Understanding_grazing/Importance",with_interactions,".csv"),sep=";")%>%
+      filter(., With_cover==cover)
+    
+    d_all2=read.table(paste0("../Data/Step1_Understanding_grazing/Estimators_model",with_interactions,".csv"),sep=";")
   
-  d_all2=read.table(paste0("../Data/Step1_Understanding_grazing/Estimators_model",with_interactions,".csv"),sep=";")%>%
-    dplyr::rename(., observed=Median)
-  
-  cover=T
-  for (k in unique(d_all2$Stat)){
-    
-    loc_pval=.05+max(d_all2%>% #localization of pvalues in the plot
-                       filter(., Stat==k , With_cover==cover,term!="Type, both")%>%#not enougth data
-                       Organize_df(., "predictor")%>%
-                       dplyr::select(.,q3)%>%dplyr::pull(.))
-    
-    p1_1=ggplot(d_all2%>%
-                  filter(., Stat==k , With_cover==cover,term!="Type, both")%>%
-                  Organize_df(., "predictor")%>%
-                  add_column(., Is_signif_pval=sapply(1:nrow(.),function(x){return(is_signif(.$pvalue[x]))})))+
-      geom_pointrange(aes(x=observed,y=term,xmin=q1,xmax=q3,color=Type_pred))+
-      geom_text(aes(x=loc_pval,y=term,label=Is_signif_pval))+
-      geom_hline(yintercept = c(5.5,17.5,21.5,25.5),linetype=9)+
-      the_theme+
-      labs(x="",y="",color="")+
-      geom_vline(xintercept = 0,linetype=9)+
-      scale_color_manual(values=c("Geo"="#FFB15B","Grazing"="#F3412A",
-                                  "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
-      theme(legend.position = "none")
-    
-    p1_2=ggplot(d_all2%>%
-                  filter(., Stat==k , With_cover==cover)%>%
-                  add_column(., xplot=0)%>%
-                  Organize_df(., "bar")%>%
-                  group_by(., Type_pred,Stat,xplot)%>%
-                  dplyr::summarise(., sum_effect=sum(abs(observed)),.groups = "keep")%>%
-                  mutate(., sum_effect=sum_effect/sum(sum_effect)))+
-      geom_bar(aes(x=xplot,y=sum_effect,fill=Type_pred),stat="identity",width = .05)+
-      geom_text(aes(x=0,y=1.05,label=paste0("R� \n = \n ",round(d_all$R2m[which(d_all$Sp_stat==k)],2))),size=3)+
-      the_theme+
-      labs(y="Relative effects of estimates",fill="")+
-      scale_fill_manual(values=c("Geo"="#FFB15B","Grazing"="#F3412A",
-                                 "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
-      theme(axis.title.x = element_blank(),
-            axis.text.x = element_blank(),axis.ticks.x = element_blank(),
-            axis.line.x = element_blank())
-    
-    p1=ggarrange(
-      ggarrange(p1_1,p1_2+theme(legend.position = "none"),widths = c(1,.2),labels = letters[1:2]),
-      get_legend(p1_2),nrow=2,heights = c(1,.15)
-    )
-    
-    
-    ggsave(paste0("../Figures/Step1_Understanding_grazing/Pred",ifelse(cover,"_with_cover","_without_cover"),
-                  "/Preditor_",k,with_interactions,".pdf"),p1,width = 6,height = 6)
+    for (k in unique(d_all2$Stat)){
+      
+      loc_pval=.05+max(d_all2%>% #localization of pvalues in the plot
+                         filter(., Stat==k , With_cover==cover,term!="Type, both")%>%#not enougth data
+                         Organize_df(., "predictor")%>%
+                         dplyr::select(.,q3)%>%dplyr::pull(.))
+      
+      p1_1=ggplot(d_all2%>%
+                    filter(., Stat==k , With_cover==cover,term!="Type, both")%>%
+                    Organize_df(., "predictor")%>%
+                    add_column(., Is_signif_pval=sapply(1:nrow(.),function(x){return(is_signif(.$pvalue[x]))})))+
+        geom_pointrange(aes(x=Median,y=term,xmin=q1,xmax=q3,color=Type_pred))+
+        geom_text(aes(x=loc_pval,y=term,label=Is_signif_pval))+
+        geom_hline(yintercept = c(5.5,17.5,21.5,25.5),linetype=9)+
+        the_theme+
+        labs(x="",y="",color="")+
+        geom_vline(xintercept = 0,linetype=9)+
+        scale_color_manual(values=c("Geography"="#FFB15B","Grazing"="#F3412A",
+                                    "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
+        theme(legend.position = "none")
+      
+      p1_2=ggplot(d_all2%>%
+                    filter(., Stat==k , With_cover==cover)%>%
+                    add_column(., xplot=0)%>%
+                    Organize_df(., "bar")%>%
+                    group_by(., Type_pred,Stat,xplot)%>%
+                    dplyr::summarise(., sum_effect=sum(abs(Median)),.groups = "keep")%>%
+                    mutate(., sum_effect=sum_effect/sum(sum_effect)))+
+        geom_bar(aes(x=xplot,y=sum_effect,fill=Type_pred),stat="identity",width = .05)+
+        geom_text(aes(x=0,y=1.05,label=paste0("R� \n = \n ",round(d_all$R2m[which(d_all$Sp_stat==k)],2))),size=3)+
+        the_theme+
+        labs(y="Relative effects of estimates",fill="")+
+        scale_fill_manual(values=c("Geography"="#FFB15B","Grazing"="#F3412A",
+                                   "Abiotic"="#4564CE","Vegetation"="#6DD275","Climatic"="#CC80C7"))+
+        theme(axis.title.x = element_blank(),
+              axis.text.x = element_blank(),axis.ticks.x = element_blank(),
+              axis.line.x = element_blank())
+      
+      p1=ggarrange(
+        ggarrange(p1_1,p1_2+theme(legend.position = "none"),widths = c(1,.2),labels = letters[1:2]),
+        get_legend(p1_2),nrow=2,heights = c(1,.15)
+      )
+      
+      ggsave(paste0("../Figures/Step1_Understanding_grazing/Pred",ifelse(cover,"_with_cover","_without_cover"),
+                    "/Preditor_",k,with_interactions,".pdf"),p1,width = 6,height = 6)
+    }
   }
 }
 
@@ -993,6 +1143,221 @@ p=ggplot(d_indirect%>%
   geom_hline(yintercept = 0)
 
 ggsave("../Figures/Step1_Understanding_grazing/Indirect_effects_grazing.pdf",p,width = 7,height = 9)
+
+
+## >> Residuals analysis: interactions ----
+
+dir.create("../Figures/Step1_Understanding_grazing/Residuals",showWarnings = F)
+for (k in list.files("../Data/Step1_Understanding_grazing/Keep_models/",".rds")
+     [-grep("cover",list.files("../Data/Step1_Understanding_grazing/Keep_models/",".rds"))]){
+  
+  stat=gsub("_TRUE.rds","",gsub("Mod_","",k))
+  with_cover=T
+  
+  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+    Closer_to_normality(.)
+  
+  d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = 
+    apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+  
+  d_data=Perform_PCA_spatial_struc(d_data)
+  
+  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
+    filter(., !is.na(value))
+  
+  
+  if (with_cover){
+    
+    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+    
+  } else{
+    
+    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+  }
+  
+  model_spa_stat  = lmer(formula_mod, d_data_mod,
+                         na.action = na.fail ,REML ="FALSE")
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  model_spa_stat = lmer(formula_mod, data = d_data_out, 
+                        na.action = na.fail,REML ="FALSE")
+  
+  model_spa_stat=readRDS(paste0("../Data/Step1_Understanding_grazing/Keep_models/",k))
+  
+  model_spa_stat = lmer(formula(model_spa_stat), data = d_data_out, 
+                        na.action = na.fail,REML ="FALSE")
+  
+  for (metric in c("Clim2","Org_C","Woody","Clim1")){
+    
+    if (metric %in% rownames(summary(model_spa_stat)$coefficients)){
+      
+      resid_mod=visreg::visreg(fit = model_spa_stat,xvar = metric,by="Grazing",plot=F) #extracting residuals
+      resid_mod$res$Grazing=rep(0:3,as.vector(table(d_data_out$Grazing))) #correcting vigreg output
+      
+      p=ggplot(resid_mod$res%>%
+                 mutate(., Grazing=as.character(Grazing))%>%
+                 dplyr::select(., -value)%>%
+                 melt(., measure.vars=metric))+
+        geom_point(aes(value,visregRes),color="black",alpha=.2)+
+        geom_smooth(aes(value,visregRes,fill=Grazing,color=Grazing),method = "lm",level=.95)+
+        the_theme+
+        facet_wrap(.~Grazing,scales = "free",labeller = label_bquote(cols = "Grazing"==.(Grazing)),ncol = 4)+
+        scale_color_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
+        scale_fill_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
+        labs(x=ifelse(metric=="Org_C","Facilitation",metric),y=paste0("Partial residuals of ",stat))+
+        theme(legend.position = "none")
+      
+      ggsave(paste0("../Figures/Step1_Understanding_grazing/Residuals/",stat,"_",metric,".pdf"),p,width = 8,height = 3)
+    }
+    
+  }
+  
+  if ("Grazing" %in% rownames(summary(model_spa_stat)$coefficients)){
+    
+    metric="Grazing"
+    resid_mod=visreg::visreg(fit = model_spa_stat,xvar = "Grazing",plot=F) #extracting residuals
+    
+    p=ggplot(resid_mod$res%>%
+               mutate(., Grazing=as.character(Grazing)))+
+      geom_jitter(aes(Grazing,visregRes),color="black",alpha=.2,width = .1)+
+      geom_pointrange(data=resid_mod$res%>%
+                        group_by(., Grazing)%>%
+                        mutate(., Grazing=as.character(Grazing))%>%
+                        dplyr::summarise(., .groups = "keep",Mean_res=median(visregRes),q1=quantile(visregRes,.25),q3=quantile(visregRes,.75)),
+                      aes(Grazing,y=Mean_res,ymin=q1,ymax=q3,fill=Grazing),color="black",shape=24,lwd=1)+
+      the_theme+
+      scale_color_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
+      scale_fill_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
+      labs(x=ifelse(metric=="Org_C","Facilitation",metric),y=paste0("Partial residuals of ",stat))+
+      theme(legend.position = "none")
+    
+    ggsave(paste0("../Figures/Step1_Understanding_grazing/Residuals/",stat,"_",metric,".pdf"),p,width = 5,height = 3)
+    
+    
+  }
+  
+}
+
+
+
+
+
+## >> Residuals analysis: grazing effect ----
+
+pdf("../Figures/Step1_Understanding_grazing/Residual_effect_grazing_cover.pdf",width = 6,height = 4)
+
+d_slope=tibble()
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = 
+  apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+d_data=Perform_PCA_spatial_struc(d_data)
+
+save=d_data
+
+for (k in c("perim_area_scaling","fmax_psd","Cond_H","PL_expo","Spectral_ratio",
+            "core_area_land","division","fractal_dim","contig","core_area",
+            "flow_length","PLR",
+            "Struct1","Struct2")){
+  
+  #for each we plot the slope against the partial residuals with and without cover
+  
+  par(mfrow=c(1,2))
+  
+  d_data_mod=save%>%melt(., measure.vars=k)%>%
+    filter(., !is.na(value))
+  
+  formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+  
+  
+  model_spa_stat  = lmer(formula_mod, d_data_mod,
+                         na.action = na.fail ,REML ="FALSE")
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  model_spa_stat = lmer(formula_mod, data = d_data_out, 
+                        na.action = na.fail,REML ="FALSE")
+  
+  # model_spa_stat=readRDS(paste0("../Data/Step1_Understanding_grazing/Keep_models/Mod_",k,"_TRUE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=T) 
+  mtext(paste0(k,", with cover"))
+  
+  mod_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_cov)$coefficient[2,4],
+                       slope=summary(mod_cov)$coefficient[2,1],
+                       Low_int=confint(mod_cov)[2,1],
+                       High_int=confint(mod_cov)[2,2],
+                       With_cover=T,
+                       Stat=k
+                ))
+  
+  
+  formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
+      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
+      + Woody + Woody*Grazing
+      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
+      + Type_veg + Type_veg*Grazing
+      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
+      + (1|Site_ID)")))
+  
+  
+  model_spa_stat  = lmer(formula_mod, d_data_mod,
+                         na.action = na.fail ,REML ="FALSE")
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  model_spa_stat = lmer(formula_mod, data = d_data_out, 
+                        na.action = na.fail,REML ="FALSE")
+  # model_spa_stat=readRDS(paste0("../Data/Step1_Understanding_grazing/Keep_models/Mod_",k,"_FALSE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=T) 
+  mtext(paste0(k,", without cover"))
+  
+  mod_no_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_no_cov)$coefficient[2,4],
+                       slope=summary(mod_no_cov)$coefficient[2,1],
+                       Low_int=confint(mod_no_cov)[2,1],
+                       High_int=confint(mod_no_cov)[2,2],
+                       With_cover=F,
+                       Stat=k
+                ))
+}
+dev.off()
+
+write.table(d_slope,"../Data/Step1_Understanding_grazing/Slope_partial_residuals.csv",sep=";")
+
+
 
 
 ## >> RDA analysis ----
@@ -1221,325 +1586,7 @@ p=ggplot(data = Frequencies%>%
 ggsave("../Figures/Step1_Understanding_grazing/Importance/Importance_lasso_penalized.pdf",p,width = 6,height = 5)
 
 
-## >> Residuals analysis ----
-
-
-dir.create("../Figures/Step1_Understanding_grazing/Residuals",showWarnings = F)
-for (k in list.files("../Data/Step1_Understanding_grazing/Keep_models/",".rds")){
-  
-  stat=gsub("_TRUE.rds","",gsub("Mod_","",k))
-  with_cover=T
-  
-  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-    Closer_to_normality(.)
-  
-  d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = 
-    apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
-  
-  d_data=Perform_PCA_spatial_struc(d_data)
-  
-  
-  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
-  
-  
-  if (with_cover){
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
-      + Woody + Woody*Grazing
-      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
-      + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
-      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
-      + (1|Site_ID)")))
-    
-  } else{
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
-      + Woody + Woody*Grazing
-      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
-      + Type_veg + Type_veg*Grazing
-      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
-      + (1|Site_ID)")))
-  }
-  
-  model_spa_stat  = lmer(formula_mod, d_data_mod,
-                         na.action = na.fail ,REML ="FALSE")
-  
-  #we remove potential outliers
-  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-  d_data_out = rm.outliers$data
-  
-  model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                        na.action = na.fail,REML ="FALSE")
-  
-  model_spa_stat=readRDS(paste0("../Data/Step1_Understanding_grazing/Keep_models/",k))
-  
-  for (metric in c("Clim2","Org_C","Woody","Clim1")){
-    
-    if (metric %in% rownames(summary(model_spa_stat)$coefficients)){
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar = metric,by="Grazing",plot=F) #extracting residuals
-      resid_mod$res$Grazing=rep(0:3,as.vector(table(d_data_out$Grazing))) #correcting vigreg output
-      
-      p=ggplot(resid_mod$res%>%
-                     mutate(., Grazing=as.character(Grazing))%>%
-                     dplyr::select(., -value)%>%
-                     melt(., measure.vars=metric))+
-              geom_point(aes(value,visregRes),color="black",alpha=.2)+
-              geom_smooth(aes(value,visregRes,fill=Grazing,color=Grazing),method = "lm",level=.95)+
-              the_theme+
-              facet_wrap(.~Grazing,scales = "free",labeller = label_bquote(cols = "Grazing"==.(Grazing)),ncol = 4)+
-              scale_color_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
-              scale_fill_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
-              labs(x=ifelse(metric=="Org_C","Facilitation",metric),y=paste0("Partial residuals of ",stat))+
-              theme(legend.position = "none")
-      
-      ggsave(paste0("../Figures/Step1_Understanding_grazing/Residuals/",stat,"_",metric,".pdf"),p,width = 8,height = 3)
-    }
-    
-  }
-  
-  if ("Grazing" %in% rownames(summary(model_spa_stat)$coefficients)){
-    
-    metric="Grazing"
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar = "Grazing",plot=F) #extracting residuals
-    resid_mod$res$Grazing=rep(0:3,as.vector(table(d_data_out$Grazing))) #correcting vigreg output
-    
-    p=ggplot(resid_mod$res%>%
-                   mutate(., Grazing=as.character(Grazing)))+
-            geom_jitter(aes(Grazing,visregRes),color="black",alpha=.2,width = .1)+
-            geom_pointrange(data=resid_mod$res%>%
-                              group_by(., Grazing)%>%
-                              mutate(., Grazing=as.character(Grazing))%>%
-                              dplyr::summarise(., .groups = "keep",Mean_res=median(visregRes),q1=quantile(visregRes,.25),q3=quantile(visregRes,.75)),
-                            aes(Grazing,y=Mean_res,ymin=q1,ymax=q3,fill=Grazing),color="black",shape=24,lwd=1)+
-            the_theme+
-            scale_color_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
-            scale_fill_manual(values=c("0"="#6EDA22",'1'="#FFF100","2"="#FBAC45","3"="#E82736"))+
-            labs(x=ifelse(metric=="Org_C","Facilitation",metric),y=paste0("Partial residuals of ",stat))+
-            theme(legend.position = "none")
-    
-    ggsave(paste0("../Figures/Step1_Understanding_grazing/Residuals/",stat,"_",metric,".pdf"),p,width = 5,height = 3)
-    
-
-  }
-  
-}
-
-
-
-
-## >> OTHER 1/ Correlation multi-functionality with low and high grazing pressures ----
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  Closer_to_normality(.)
-
-d_data[,c(1,7:29,35,37:41,(44:(ncol(d_data))))] = apply(d_data[,c(1,7:29,35,37:41,(44:(ncol(d_data))))],2,z_tranform)
-
-d_data$MF=z_tranform(rowSums(d_data[,55:(ncol(d_data))]))
-
-
-#then, correlation graph
-pdf("../Figures/Step1_Understanding_grazing/Correlation_functioning_metrics2.pdf",width = 12,height = 12)
-
-
-list_grazing=list(0:3,c(0,1),c(2,3))
-name_plots=c("All data","Low grazing pressure","High grazing pressure")
-
-par(mfrow=c(3,2),mar=rep(4,4))
-for (id in 1:length(list_grazing)){
-  
-  #correlation functioning metrics
-  mat_cor=(rcorr(as.matrix(d_data[which(d_data$Grazing %in% list_grazing[[id]]),c(55:65)]),type = "pearson")$r)
-  mat_cor[rcorr(as.matrix(d_data[,c(55:65)]),type = "pearson")$P>0.05]=0
-  mat_cor[mat_cor<.15]=0
-  
-  
-  
-  network_EWS = igraph::simplify(
-    graph_from_adjacency_matrix(mat_cor,
-                                weighted = TRUE,
-                                mode = c("undirected")))
-  
-  E(network_EWS)$width = E(network_EWS)$weight*3
-  E(network_EWS)$lty   = sapply(E(network_EWS)$weight,function(x){ifelse(x>0,1,2)})
-  
-  layout_new=layout.circle(network_EWS)
-  
-  
-  plot(network_EWS,
-       vertex.color = c("#E6967F"),
-       vertex.frame.width = 1,vertex.label.color="black",
-       edge.curved = .3,edge.color = "grey",
-       vertex.size=300*abs(colMeans(d_data[which(d_data$Grazing %in% list_grazing[[id]]),55:65],na.rm = T)),
-       layout = layout_new,frame = TRUE,main=name_plots[id]
-  )
-  
-  #correlation spatial structure 
-  d_struc=d_data
-  
-  mat_cor=(rcorr(as.matrix(d_struc[which(d_struc$Grazing %in% list_grazing[[id]]),c(7:24)]),type = "pearson")$r)
-  mat_cor[rcorr(as.matrix(d_struc[,c(7:24)]),type = "pearson")$P>0.05]=0
-  mat_cor[mat_cor<.15]=0
-  
-  network_EWS = igraph::simplify(
-    graph_from_adjacency_matrix(mat_cor,
-                                weighted = TRUE,
-                                mode = c("undirected")))
-  
-  E(network_EWS)$width = E(network_EWS)$weight*3
-  
-  layout_new=layout.circle(network_EWS)
-  
-  plot(network_EWS,
-       vertex.color = c("#B9E4AC"),
-       vertex.frame.width = 1,vertex.label.color="black",
-       edge.curved = .3,edge.color = "grey",
-       vertex.size=300*abs(colMeans(d_struc[which(d_struc$Grazing %in% list_grazing[[id]]),7:24],na.rm = T)),
-       layout = layout_new,frame = TRUE,main=name_plots[id]
-  )
-}
-dev.off()
-
-
-
-#Same but this time the colors correspond to the slope of change along grazing gradient
-
-saling_size_nodes=tibble(Function=c(500,500,200),Sp_stats=c(500,300,250))
-
-formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Clim1 + Clim2 + Clim3 + Clim4
-      + Woody + rho_p + Type_veg 
-      + Sand + (1|Site_ID)")))
-
-
-
-pdf("../Figures/Step1_Understanding_grazing/Correlation_functioning_metrics.pdf",width = 12,height = 12)
-par(mfrow=c(3,2),mar=rep(4,4))
-
-for (id in 1:length(list_grazing)){
-  
-  #correlation functioning metrics
-  mat_cor=(rcorr(as.matrix(d_data[which(d_data$Grazing %in% list_grazing[[id]]),c(55:65)]),type = "pearson")$r)
-  mat_cor[rcorr(as.matrix(d_data[,c(55:65)]),type = "pearson")$P>0.05]=0
-  mat_cor[mat_cor<.15]=0
-  
-  network_EWS = igraph::simplify(
-    graph_from_adjacency_matrix(mat_cor,
-                                weighted = TRUE,
-                                mode = c("undirected")))
-  
-  E(network_EWS)$width = abs(E(network_EWS)$weight)*3
-  E(network_EWS)$lty   = sapply(E(network_EWS)$weight,function(x){ifelse(x>0,1,2)})
-  layout_new=layout.circle(network_EWS)
-  
-  #We compute the slopes along Grazing gradient
-  d_slope=tibble()
-  d_struc=filter(d_data,Grazing %in% list_grazing[[id]])
-  
-  for (k in c(colnames(d_struc)[c(55:65)])){
-    
-    dat_lmer=d_struc%>%melt(., measure.vars=k)%>%filter(., !is.na(value))
-    #first we fit the complete model and extract the residuals
-    
-    full_mod=lmer(formula_mod,
-                  data=dat_lmer,
-                  na.action = na.omit)  
-    
-    #residuals
-    dat_lmer$resids=residuals(full_mod)
-    
-    mod_stat=lm(resids ~ Grazing,data=dat_lmer,na.action = na.omit)  
-    d_slope=rbind(d_slope,tibble(Estimate=summary(mod_stat)$coefficients[2,1],
-                                 pval=summary(mod_stat)$coefficients[2,4])%>%
-                    add_column(., Stat=k)%>%
-                    dplyr::rename(., Slope=Estimate))
-  }
-  
-  plot(network_EWS,
-       vertex.color = sapply(1:nrow(d_slope),function(x){
-         if (d_slope$pval[x]<.05){ #significative slope
-           if (d_slope$Slope[x]>0){
-             return("#617CBB")
-           }else {
-             return("#CE5A5A")
-           }
-         }else {
-           return("gray")
-         }
-       }),
-       vertex.frame.width = 1,vertex.label.color="black",
-       edge.curved = .3,edge.color = "grey",
-       vertex.size=saling_size_nodes$Function[id]*abs(d_slope$Slope),
-       layout = layout_new,frame = TRUE,main=name_plots[id]
-  )
-  
-  #correlation spatial structure 
-  d_struc=d_data
-  
-  mat_cor=(rcorr(as.matrix(d_struc[which(d_struc$Grazing %in% list_grazing[[id]]),c(7:24)]),type = "pearson")$r)
-  mat_cor[rcorr(as.matrix(d_struc[,c(7:24)]),type = "pearson")$P>0.05]=0
-  mat_cor[mat_cor<.15]=0
-  
-  
-  network_EWS = igraph::simplify(
-    graph_from_adjacency_matrix(mat_cor,
-                                weighted = TRUE,
-                                mode = c("undirected")))
-  
-  E(network_EWS)$width = abs(E(network_EWS)$weight)*3
-  E(network_EWS)$lty   = sapply(E(network_EWS)$weight,function(x){ifelse(x>0,1,2)})
-  
-  layout_new=layout.circle(network_EWS)
-  
-  #We compute the slopes along Grazing gradient
-  d_slope=tibble()
-  d_struc=filter(d_data,Grazing %in% list_grazing[[id]])
-  
-  for (k in c(colnames(d_struc)[c(7:24)])){
-    
-    dat_lmer=d_struc%>%melt(., measure.vars=k)%>%filter(., !is.na(value))
-    #first we fit the complete model and extract the residuals
-    
-    full_mod=lmer(formula_mod,
-                  data=dat_lmer,
-                  na.action = na.omit)  
-    
-    #residuals
-    dat_lmer$resids=residuals(full_mod)
-    
-    mod_stat=lm(resids ~ Grazing,data=dat_lmer,na.action = na.omit)  
-    d_slope=rbind(d_slope,tibble(Estimate=summary(mod_stat)$coefficients[2,1],
-                                 pval=summary(mod_stat)$coefficients[2,4])%>%
-                    add_column(., Stat=k)%>%
-                    dplyr::rename(., Slope=Estimate))
-  }
-  
-  plot(network_EWS,
-       vertex.color = sapply(1:nrow(d_slope),function(x){
-         if (d_slope$pval[x]<.05){
-           if (d_slope$Slope[x]>0){
-             return("#617CBB")
-           }else {
-             return("#CE5A5A")
-           }
-         }else {
-           return("gray")
-         }
-       }),
-       vertex.frame.width = 1,vertex.label.color="black",
-       edge.curved = .3,edge.color = "grey",
-       vertex.size=saling_size_nodes$Sp_stats[id]*abs(d_slope$Slope),
-       layout = layout_new,frame = TRUE,main=name_plots[id]
-  )
-}
-
-dev.off()
-
-
-## >> OTHER 2/ SEM with many soil functioning variables (Not working well) ----
+## >> OTHER 1/ SEM with many soil functioning variables (Not working well) ----
 
 d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
   Closer_to_normality(.)
@@ -1915,3 +1962,330 @@ for (id in 1:length(list_grazing)){
 
 dev.off()
 
+
+
+## >> OTHER 2/ SEM with mixed effect models ----
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+
+d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+
+#Getting the multifunctionality index
+d_data$MF=z_tranform(rowSums(d_data[,55:(ncol(d_data))],na.rm = T))
+
+#Adding the first two components from the PCA
+d_data=Perform_PCA_spatial_struc(d_data)
+
+d_indirect=tibble() #to save indirect effects of grazing on the spatial structure
+dir.create("../Figures/Step1_Understanding_grazing/SEM_lmer/",showWarnings = F)
+
+param_list=expand.grid(Cov=c("with_cover","without_cover"),
+                       Stat=c("perim_area_scaling","PL_expo","Cond_H","fmax_psd",
+                              "PLR","flow_length","mean_perim_area","core_area_land",
+                              "fractal_dim","division","contig",
+                              "Struct1","Struct2"),
+                       MF=c(T,F)) #MF instead of organic carbon
+
+for (ID in 1:nrow(param_list)){
+  
+  dir.create(paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID]),showWarnings = F)
+  
+  with_cover=param_list$Cov[ID];k=as.character(param_list$Stat[ID])
+  
+  model_lmer=lmer(paste("value ~ (1|Site_ID) + Long_cos + Long_sin + Lattitude + Slope + Elevation + Clim1 + Clim2 + Clim3 + Clim4 + Type_veg",
+                        ifelse(with_cover=="without_cover","+ rho_p","")),REML = F,
+                  data = d_data%>%melt(., measure.vars=k)%>%filter(., !is.na(value)),
+                  na.action = na.omit)
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_lmer, d_data%>%melt(., measure.vars=k)%>%filter(., !is.na(value)),
+                         trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  #We first control for all covariates and extract the residuals
+  model_lmer=lmer(paste("value ~ (1|Site_ID) + Long_cos + Long_sin + Lattitude + Slope + Elevation + Clim1 + Clim2 + Clim3 + Clim4 + Type_veg",
+                        ifelse(with_cover=="without_cover","+ rho_p","")),
+                  data = d_data_out,REML = F,
+                  na.action = na.fail)
+  
+  resid_model=residuals(model_lmer) #extract residuals
+  
+  save=d_data[as.numeric(names(resid_model)),]%>% #add it to the dataframe 
+    add_column(., Resid_mod=resid_model)
+  
+  if (param_list$MF[ID]){ save$Org_C=save$MF}
+  
+  #DOING the SEMs
+  
+  if (with_cover=="with_cover"){
+    
+    #SEM with all grazing intensity
+    
+    d_sem=save
+    all_d=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody + rho_p , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(rho_p ~ (1|Site_ID) + Grazing + Org_C + Sand , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+    
+    #SEM with low grazing intensity
+    
+    d_sem=filter(save,Grazing %in% 0:1)
+    low_graz=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody + rho_p , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(rho_p ~ (1|Site_ID) + Grazing + Org_C + Sand , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+    
+    #SEM with high grazing intensity
+    
+    d_sem=filter(save,Grazing %in% 2:3)
+    high_graz=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody + rho_p , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(rho_p ~ (1|Site_ID) + Grazing + Org_C + Sand , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+    
+    
+  }else {
+    
+    #SEM with all grazing intensity
+    
+    d_sem=save
+    all_d=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+    
+    #SEM with low grazing intensity
+    
+    d_sem=filter(save,Grazing %in% 0:1)
+    low_graz=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+    
+    #SEM with high grazing intensity
+    
+    d_sem=filter(save,Grazing %in% 2:3)
+    high_graz=summary(psem(
+      lmer(Resid_mod ~ (1|Site_ID) + Grazing + Woody , d_sem),
+      lmer(Woody ~ (1|Site_ID) + Grazing + Org_C + Sand, d_sem),
+      lmer(Sand ~ (1|Site_ID) + Grazing , d_sem),
+      lmer(Org_C ~ (1|Site_ID) + Grazing, d_sem)
+    ))
+  }
+  
+  
+  d_indirect=rbind(d_indirect,
+                   Get_indirect_effects_grazing(all_d)%>%
+                     add_column(., Type="All",Stat=k,With_cover=with_cover,MF=param_list$MF[ID]),
+                   Get_indirect_effects_grazing(high_graz)%>%
+                     add_column(., Type="High",Stat=k,With_cover=with_cover,MF=param_list$MF[ID]),
+                   Get_indirect_effects_grazing(low_graz)%>%
+                     add_column(., Type="Low",Stat=k,With_cover=with_cover,MF=param_list$MF[ID]))
+  
+  #ploting
+  
+  if(with_cover=="with_cover"){
+    
+    Plot_SEM_with_cover(summary_sem = all_d,pdf_ = T,
+                        name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                      "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_all"),
+                        title_ = paste0("SEM_",k,"_all"),
+                        name_var = k,MF = param_list$MF[ID])
+    
+    Plot_SEM_with_cover(summary_sem = low_graz,pdf_ = T,
+                        name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                      "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_low"),
+                        title_ = paste0("SEM_",k,"_low"),
+                        name_var = k,MF = param_list$MF[ID])
+    
+    Plot_SEM_with_cover(summary_sem = high_graz,pdf_ = T,
+                        name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                      "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_high"),
+                        title_ = paste0("SEM_",k,"_high"),
+                        name_var = k,MF = param_list$MF[ID])
+  }else {
+    
+    Plot_SEM_without_cover(summary_sem = all_d,pdf_ = T,
+                           name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                         "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_all"),
+                           title_ = paste0("SEM_",k,"_all"),
+                           name_var = k,MF = param_list$MF[ID])
+    
+    Plot_SEM_without_cover(summary_sem = low_graz,pdf_ = T,
+                           name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                         "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_low"),
+                           title_ = paste0("SEM_",k,"_low"),
+                           name_var = k,MF = param_list$MF[ID])
+    
+    Plot_SEM_without_cover(summary_sem = high_graz,pdf_ = T,
+                           name = paste0("../Figures/Step1_Understanding_grazing/SEM_lmer/",param_list$Stat[ID],"/",
+                                         "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_high"),
+                           title_ = paste0("SEM_",k,"_high"),
+                           name_var = k,MF = param_list$MF[ID])
+  }
+  
+}
+
+
+## >> OTHER 3/ SEM replace cover ----
+
+Plot_SEM_replace_cover=function(summary_sem,pdf_=F,name="SEM",title_="",name_var="",MF=F){
+  
+  l=summary_sem$coefficients[,c("Predictor","Response","Estimate","P.Value")]
+  l$color="#9ED471"
+  l$color[which(l$Estimate<0)]="#EFC46A"
+  l$color[which(l$P.Value>0.1)]="gray"
+  
+  g = graph.data.frame(l, directed=T)
+  g= g %>% set_edge_attr("color", value =l$color)
+  g= g %>% set_vertex_attr("name", value =c("Grazing","Woody","Facilitation","Sand",
+                                            name_var))
+  coord=data.frame(label=vertex_attr(g, "name"),
+                   lab2=c("Grazing","Woody","Facilitation","Sand",
+                          name_var),
+                   x=c(-10,10,0,0,10),y=c(0,-15,30,-30,15))
+  EL=as_edgelist(g)
+  EL=cbind(EL,l[,3])
+  
+  name_edge=sapply(1:length(summary_sem$coefficients$P.Value),function(x){#adding pvalue
+    return(paste0(round(l[x,3],3),is_signif(summary_sem$coefficients$P.Value[x])))
+  })
+  
+  asi=abs(l[,3])/0.05
+  asi[asi<5]=5
+  
+  if(pdf_){
+    pdf(paste0("./",name,".pdf"),width = 7,height = 4)
+    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
+           border.color="white",label.cex=1.5,label.scale=F,title=title_,
+           edge.label.cex = 1.5,edge.label.position=0.25,vsize2=4,vsize=30,
+           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
+           mar=rep(3,4))
+    dev.off()
+    
+  }else {
+    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
+           border.color="white",label.cex=1.5,label.scale=F,
+           edge.label.cex = 1.5,edge.label.position=0.25,vsize2=4,vsize=30,
+           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
+           mar=rep(3,4))
+    
+  }
+}
+
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+
+d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
+
+#Getting the multifunctionality index
+d_data$MF=z_tranform(rowSums(d_data[,55:(ncol(d_data))],na.rm = T))
+
+#Adding the first two components from the PCA
+d_data=Perform_PCA_spatial_struc(d_data)
+
+d_indirect=tibble() #to save indirect effects of grazing on the spatial structure
+dir.create("../Figures/Step1_Understanding_grazing/SEMtest",showWarnings = F)
+
+param_list=expand.grid(Cov=c("with_cover"),
+                       Stat=c("perim_area_scaling","flow_length",
+                              "fractal_dim","core_area",
+                              "Struct1","Struct2"),
+                       MF=c(F)) #MF instead of organic carbon
+
+for (ID in 1:nrow(param_list)){
+  
+  dir.create(paste0("../Figures/Step1_Understanding_grazing/SEMtest/",param_list$Stat[ID]),showWarnings = F)
+  
+  with_cover=param_list$Cov[ID];k=as.character(param_list$Stat[ID])
+  
+  model_lmer=lmer(paste("value ~ (1|Site_ID) + Long_cos + Long_sin + Lattitude + Slope + Elevation + Clim1 + Clim2 + Clim3 + Clim4 + Type_veg",
+                        ifelse(with_cover=="without_cover","+ rho_p","")),
+                  data = d_data%>%melt(., measure.vars=k)%>%filter(., !is.na(value)),
+                  na.action = na.omit,REML ="FALSE")
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_lmer, d_data%>%melt(., measure.vars=k)%>%filter(., !is.na(value)),
+                         trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  #We first control for all covariates and extract the residuals
+  model_lmer=lmer(paste("value ~ (1|Site_ID) + Long_cos + Long_sin + Lattitude + Slope + Elevation + Clim1 + Clim2 + Clim3 + Clim4 + Type_veg",
+                        ifelse(with_cover=="without_cover","+ rho_p","")),
+                  data = d_data_out,
+                  na.action = na.fail,REML ="FALSE")
+  
+  resid_model=residuals(model_lmer) #extract residuals
+  
+  save=d_data[as.numeric(names(resid_model)),]%>% #add it to the dataframe 
+    add_column(., Resid_mod=resid_model)
+  
+  #DOING the SEMs
+  
+  #SEM with all grazing intensity
+  
+  d_sem=save
+  all_d=summary(psem(
+    lm(Resid_mod ~ Grazing + Woody + Org_C + Sand , d_sem),
+    lm(Woody ~ Grazing + Org_C + Sand, d_sem),
+    lm(Sand ~ Grazing , d_sem),
+    lm(Org_C ~ Grazing, d_sem)
+  ))
+  
+  #SEM with low grazing intensity
+  
+  d_sem=filter(save,Grazing %in% 0:1)
+  low_graz=summary(psem(
+    lm(Resid_mod ~ Grazing + Woody + Org_C + Sand , d_sem),
+    lm(Woody ~ Grazing + Org_C + Sand, d_sem),
+    lm(Sand ~ Grazing , d_sem),
+    lm(Org_C ~ Grazing, d_sem)
+  ))
+  
+  #SEM with high grazing intensity
+  
+  d_sem=filter(save,Grazing %in% 2:3)
+  high_graz=summary(psem(
+    lm(Resid_mod ~ Grazing + Woody + Org_C + Sand, d_sem),
+    lm(Woody ~ Grazing + Org_C + Sand, d_sem),
+    lm(Sand ~ Grazing , d_sem),
+    lm(Org_C ~ Grazing, d_sem)
+  ))
+  
+  
+  #ploting
+  
+  
+  Plot_SEM_replace_cover(summary_sem = all_d,pdf_ = T,
+                         name = paste0("../Figures/Step1_Understanding_grazing/SEMtest/",param_list$Stat[ID],"/",
+                                       "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_all"),
+                         title_ = paste0("SEM_",k,"_all"),
+                         name_var = k,MF = param_list$MF[ID])
+  
+  Plot_SEM_replace_cover(summary_sem = low_graz,pdf_ = T,
+                         name = paste0("../Figures/Step1_Understanding_grazing/SEMtest/",param_list$Stat[ID],"/",
+                                       "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_low"),
+                         title_ = paste0("SEM_",k,"_low"),
+                         name_var = k,MF = param_list$MF[ID])
+  
+  Plot_SEM_replace_cover(summary_sem = high_graz,pdf_ = T,
+                         name = paste0("../Figures/Step1_Understanding_grazing/SEMtest/",param_list$Stat[ID],"/",
+                                       "SEM_",param_list$Stat[ID],"_",param_list$Cov[ID],"_MF_",param_list$MF[ID],"_high"),
+                         title_ = paste0("SEM_",k,"_high"),
+                         name_var = k,MF = param_list$MF[ID])
+}

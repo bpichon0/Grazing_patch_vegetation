@@ -338,13 +338,13 @@ ggsave("../Figures/Change_parameters_no_info_cover.pdf",p,width = 8,height = 4)
 # ---------------------- Step 1: Computing the spatial metrics ----
 ## >> 1) Transforming images into binary matrices ----
 
-info_kmean=read.table("../Data/Landscapes/Kmean_clust_info.csv",sep=",",header = T)%>%
-  filter(., status=="kept",Size!=200) #keeping the kept sites
-
 
 dir.create("../Data/Landscapes/Binary_landscapes/",showWarnings = F)
 
-for (id in 1:nrow(info_kmean)){ #for each kept landscape
+Extract_binary_matrix=function(id){  
+  
+  info_kmean=read.table("../Data/Landscapes/Kmean_clust_info.csv",sep=",",header = T)%>%
+    filter(., Size!=200,Dataset=="biodesert") #keeping the kept sites
   
   # we load the landscape
   img=readJPEG(paste0("../Data/Landscapes/",info_kmean$Dataset[id],
@@ -364,6 +364,8 @@ for (id in 1:nrow(info_kmean)){ #for each kept landscape
               row.names = F,col.names = F,sep=",")
 }
 
+library(parallel)
+mclapply(Extract_binary_matrix,1:978,mc.cores = 25)
 
 ## >> 2) Computing the metrics on the binary landscapes (of Biodesert only) ----
 
@@ -460,49 +462,49 @@ d=d%>%
   add_column(., Long_sin=sin(.$Longitude),Long_cos=cos(.$Longitude))%>%
   add_column(., 
              Aromatic=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`ARO veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                     -
-                                                                       d_biodesert$`ARO b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                     # -
+                                                                     #   d_biodesert$`ARO b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Org_C=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`ORC veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                  -
-                                                                    d_biodesert$`ORC b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                  # -
+                                                                  #   d_biodesert$`ORC b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Beta_gluco=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`BGL veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                       -
-                                                                         d_biodesert$`BGL b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                       # -
+                                                                       #   d_biodesert$`BGL b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Phosphatase=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`FOS veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                        -
-                                                                          d_biodesert$`FOS b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                        # -
+                                                                        #   d_biodesert$`FOS b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Total_N=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`TON veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                    -
-                                                                      d_biodesert$`TON b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                    # -
+                                                                    #   d_biodesert$`TON b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Amonium=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`AMO veg`[which(d_biodesert$ID==.$Site_ID[x])]
                                                                     -
                                                                       d_biodesert$`AMO b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Nitrate=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`NIT veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                    -
-                                                                      d_biodesert$`NIT b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                    # -
+                                                                    #   d_biodesert$`NIT b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Hexose=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`HEX veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                   -
-                                                                     d_biodesert$`HEX b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                   # -
+                                                                   #   d_biodesert$`HEX b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              N_transfo=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`NTR veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                      -
-                                                                        d_biodesert$`NTR b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                      # -
+                                                                      #   d_biodesert$`NTR b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              N_minera=as.numeric(sapply(1:nrow(.),function(x){return(d_biodesert$`MIN veg`[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                     -
-                                                                       d_biodesert$`MIN b`[which(d_biodesert$ID==.$Site_ID[x])]
+                                                                     # -
+                                                                     #   d_biodesert$`MIN b`[which(d_biodesert$ID==.$Site_ID[x])]
              )})),
              Total_P=as.numeric(sapply(1:nrow(.),function(x){return(as.numeric(c(d_biodesert$Total_P_vegetation[which(d_biodesert$ID==.$Site_ID[x])]))
-                                                                    -
-                                                                      as.numeric(d_biodesert$Total_P_b[which(d_biodesert$ID==.$Site_ID[x])]
-                                                                      ))}))
+                                                                    # -
+                                                                    #   as.numeric(d_biodesert$Total_P_b[which(d_biodesert$ID==.$Site_ID[x])])
+                                                                      )}))
   )
 
 
@@ -856,181 +858,3 @@ write.table(d_all2,"../Data/Step1_Understanding_grazing/Estimators_model_grazing
 
 
 
-# ---------------------- TEST: RF analysis  ----
-
-#We want to understand the drivers of spatial structure
-d_all=d_all2=tibble()#for keeping all information
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  Closer_to_normality(.)
-
-d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
-pdf("./RF.pdf",p1,width = 13,height = 7)
-
-
-for (stat in c("fractal_dim","fmax_psd","Spectral_ratio","PL_expo",
-               "flow_length","perim_area_scaling","mean_perim_area",
-               "core_area","core_area_land","contig")){
-  
-  subset_data=d_data[,c(which(colnames(d_data)==stat),34:ncol(d_data))]%>%
-    melt(., measure.vars = stat)%>%
-    filter(., !is.na(value))
-  
-  labels=subset_data[,"value"]
-  preds=data.matrix(subset_data[,-which(colnames(subset_data)=="value")])
-  
-  set.seed(200)
-  trainID = sample(1:nrow(subset_data),size = floor(nrow(subset_data)*0.7))
-  validid = (1:nrow(subset_data))
-  validid = validid[!(validid %in% trainID)]
-  
-  dtrain = xgb.DMatrix(data = preds[trainID,], label= labels[trainID])
-  dtest = xgb.DMatrix(data = preds[validid,], label= labels[validid])
-  dall = xgb.DMatrix(data = preds, label= labels)
-  
-  params_booster=list(booster = 'gbtree', 
-                         eta = 0.2, 
-                         gamma = 0, 
-                         max.depth = 6, 
-                         subsample = 1, 
-                         colsample_bytree = 1, 
-                         eval_metric="error",
-                         colsample_bytree=1)
-  
-  bst.cv = xgb.cv(data = preds[trainID,],
-                   label = as.numeric(labels)[trainID], 
-                   params = params_booster,
-                   nrounds = 200, 
-                   nfold = 5,
-                   print_every_n = 20,
-                   verbose = 2)
-  
-  nrounds_best=which.min(bst.cv$evaluation_log$test_error_mean)
-  
-  set.seed(300)
-  model_tuned = xgboost(data = preds[trainID,],
-                         label = as.numeric(labels)[trainID],
-                         booster = "gbtree",
-                         eval_metric="error",
-                         max.depth = 6, 
-                         nround = nrounds_best, 
-                         eta=.2,
-                         gamma=0,
-                         subsample=1,
-                         nfold=5,
-                         colsample_bytree=1)
-  
-  importance_matrix = xgb.importance(colnames(preds), model = model_tuned)
-  
-  
-  
-  #The SHAP
-  
-  library(fastshap)
-  pfun = function(object, newdata) {
-    predict(object, data = newdata)$predictions
-  }
-  predsi=preds
-  EXPVAL=explain(model_tuned,X=predsi,pred_wrapper = pfun,exact = TRUE)
-  predsi=as.data.frame(predsi)
-  
-  p1=importance_matrix%>%
-    mutate(name = fct_reorder(Feature, Gain)) %>%
-    ggplot( aes(x=name, y=Gain)) +
-    geom_bar(stat="identity", fill="black", width=.4) +
-    coord_flip() +
-    labs(x="",y="Importance") +
-    ggtitle(stat)+
-    the_theme+
-    theme(panel.grid.major = element_line(color = "gray90"))
-  
-  print(p1)
-  
-  shap_long_NEG=tibble()
-  for(i in 1:ncol(EXPVAL)){
-    var=colnames(predsi)[i]
-    shap_long_NEG=rbind(shap_long_NEG,tibble(variable=var,value=EXPVAL[,i],rfvalue=predsi[,i]))
-  }
-  
-  
-  
-  shap_long_NEG$Importance=importance_matrix$Gain[match(shap_long_NEG$variable,importance_matrix$Feature)]
-  shap_long_NEG=shap_long_NEG %>%
-    mutate(name=fct_reorder(variable, Importance))
-  
-  p1=ggplot(shap_long_NEG,aes(x=rfvalue,y=value))+
-    geom_point(size=0.2,alpha=0.5,color="gray")+
-    geom_smooth(color="palegreen")+
-    xlab("\nFeature value")+
-    ylab("SHAP value \n[impact on model output]\n")+
-    ggtitle(stat)+
-    facet_wrap(~variable,scales = "free",ncol = 7)+
-    the_theme
-  
-  print(p1)
-}
-
-dev.off()
-
-
-
-
-
-
-
-
-
-
-# ---------------------- TEST: Replicate Wang paper ----
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  add_column(., Long_sin=sin(.$Longitude),Long_cos=cos(.$Longitude))
-
-d_data=d_data%>%  
-  add_column(.,PPQW=as.numeric(sapply(1:nrow(.),
-                           function(x){return(d_biodesert$RAWAQ[which(d_biodesert$ID==.$Site_ID[x])])})))
-
-d_data[,c(1,9:29,35,37:41,44:ncol(d_data))] = apply(d_data[,c(1,9:29,35,37:41,44:ncol(d_data))],2,z_tranform)
-
-d_all2=tibble()
-
-
-stat="fmax_psd"
-print(stat)
-
-d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-  filter(., !is.na(value),!is.na(PPQW))%>%
-  filter(., Grazing !=0)
-
-formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity*rho_p + Aridity*Org_C
-      + Aridity*Grazing
-      + PPQW*Grazing + Org_C*Grazing
-      + Sand*Grazing + rho_p*Grazing
-      + (1|Site_ID) + (1|Sub_id)")))
-
-model_spa_stat  = lmer(formula_mod, d_data_mod,
-                       na.action = "na.fail" ,REML ="FALSE")
-
-#we remove potential outliers
-rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-d_data_out = rm.outliers$data
-
-model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                      na.action = na.fail,REML ="FALSE")
-
-
-#Get R² of the full model
-model_spa_stat=lmer(formula_mod, data = d_data_out,
-                    na.action = na.fail,REML ="FALSE")
-
-
-
-
-test=visreg::visreg(fit = model_spa_stat,xvar = "Aridity",by = "Grazing",plot=T)
-plot(ggpredict(model_spa_stat, c("Org_C", "Grazing")), residuals = TRUE, grid = TRUE)
-
-ggplot(test$res)+
-  geom_point(aes(x=Aridity,y=visregRes, color=as.factor(Grazing)))+the_theme+
-  scale_color_manual(values=c("green","yellow","red"))+
-  geom_smooth(aes(x=Aridity,y=visregRes, color=as.factor(Grazing)),method = "lm")
