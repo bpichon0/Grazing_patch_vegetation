@@ -3,13 +3,11 @@ x = c("tidyverse", "ggpubr", "latex2exp", "reshape2", "simecol","ggeffects","nlm
       "ggquiver", "scales","boot","RColorBrewer","ggnewscale","cluster","vegan",
       "factoextra","FactoMineR","missMDA","GGally","diptest","raster","ape","abctools","viridis",
       "png","jpeg","landscapemetrics","lme4","lmeresampler","GGally","MuMIn","multcompView",
-      "LMERConvenienceFunctions","piecewiseSEM","qgraph","car","spdep","ParBayesianOptimization",
-      "ggpattern")
+      "LMERConvenienceFunctions","semEff","piecewiseSEM","qgraph","car","spdep","ParBayesianOptimization",
+      "ggpattern","ggpmisc","ggpp","gradientForest","extendedForest","rfPermute","A3",
+      "psych")
 
 source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")
-
-#install pacakges if not installed already
-install.packages(setdiff(x, rownames(installed.packages())))
 
 #loading the packages
 lapply(x, require, character.only = TRUE)
@@ -22,7 +20,7 @@ d_biocom=readxl::read_xlsx("../Data/Final_biocom.xlsx")
 d_biodesert=readxl::read_xlsx("../Data/Final_biodesert.xlsx")
 
 the_theme=theme_classic()+theme(legend.position = "bottom",
-                                strip.background = element_rect(fill=alpha("#CBB7D8",.6),color="black"),
+                                strip.background = element_rect(fill="#CBB7D8",color="black"),
                                 strip.text.y = element_text(size = 10, angle = -90, face = "italic"),
                                 strip.text.x = element_text(size = 10, face = "italic"),
                                 legend.text = element_text(size = 10),text = element_text(family = "NewCenturySchoolbook"))
@@ -37,7 +35,7 @@ the_theme2 = theme_classic() + theme(
   axis.title.y=element_text(size = 10),
   axis.title.x=element_text(size = 10),
   #legend.box="vertical",
-  legend.text = element_text(size = 10), text = element_text(family = "Helvetica Light")
+  legend.text = element_text(size = 10), text = element_text(family = "NewCenturySchoolbook")
 )
 
 
@@ -45,8 +43,7 @@ the_theme2 = theme_classic() + theme(
 # cor(d_data[,"contig"],d_data[,c("rho_p","Org_C","Sand","Clim1","Clim2","Clim3","Clim4","Woody","Longitude","Slope","Elevation","Long_cos","Long_sin","Grazing")])
 
 dir.create("../Figures/",showWarnings = F)
-dir.create("../Figures/Final_figs",showWarnings = F)
-dir.create("../Figures/Final_figs/SI",showWarnings = F)
+dir.create("../Figures/SI",showWarnings = F)
 
 
 `%!in%` = Negate(`%in%`)
@@ -74,6 +71,10 @@ twoside_pvalue=function(data){
   p2=sum(data<0)/length(data)
   p=min(p1,p2)*2
   return(p)
+}
+
+get_bootstrapped_pval=function(x){
+  return(ifelse(length(which(x>0))/length(x)>.5,length(which(x<0))/length(x),length(which(x>0))/length(x)))
 }
 
 # 1) Getting matrices and plotting functions ----
@@ -298,7 +299,6 @@ Get_KS_distance = function(mat,n_shuffle) {
   
   return( mean(all_ks) )
 }
-
 
 Get_sumstat=function(landscape,log_=T,slope=0){
   
@@ -596,14 +596,21 @@ Closer_to_normality=function(df){
   
   df=df%>%
     mutate(., 
-           flow_length=log(flow_length)+1,
-           cv_psd=log(cv_psd)+1,
-           mean_psd=log(mean_psd)+1,
-           sd_psd=log(sd_psd)+1,
-           median_psd=log(median_psd)+1,
-           core_area=log(core_area)+1,
-           Org_C=log(Org_C+5)+1,
-           Slope=log(Slope+1)+1)
+           flow_length=log(flow_length),
+           cv_psd=log(cv_psd),
+           mean_psd=log(mean_psd),
+           sd_psd=log(sd_psd),
+           median_psd=log(median_psd),
+           core_area=log(core_area),
+           Nitrate=log(Nitrate),
+           Org_C=log(Org_C+5), # 5 is the rounded minimum of the function
+           Org_C_v=log(Org_C_v), 
+           Total_N=log(Total_N),
+           lnTotal_N=log(lnTotal_N+2), 
+           Total_P=log(Total_P),
+           lnTotal_P=log(lnTotal_P+100), 
+           lnNitrate=log(lnNitrate+100),
+           Slope=log(Slope+1))
   
   return(df)
 }
@@ -637,7 +644,7 @@ Aggregate_importance=function(importance_df,aridity=F){
     d=tibble(Interactions=ifelse(exists("Interactions"),Interactions,0),
              Sand =ifelse("Sand" %in% colnames(importance_df),importance_df[,"Sand"],0),
              Aridity=ifelse("Aridity" %in% colnames(importance_df),importance_df[,"Aridity"],0),
-             Org_C=ifelse("Org_C" %in% colnames(importance_df),importance_df[,"Org_C"],0),
+             Org_C=ifelse("Org_C_v" %in% colnames(importance_df),importance_df[,"Org_C_v"],0),
              Type_veg=ifelse("Type_veg" %in% colnames(importance_df),importance_df[,"Type_veg"],0),
              Grazing=ifelse("Grazing" %in% colnames(importance_df),importance_df[,"Grazing"],0),
              Cover=ifelse("rho_p" %in% colnames(importance_df),importance_df[,"rho_p"],0),
@@ -678,6 +685,10 @@ Aggregate_models=function(subset_models){
 
 Organize_df=function(df,type="predictor"){
   
+  if (any(df$term %in% c(".sigma","(Intercept)"))){
+    df=filter(df, term %!in% c(".sigma","(Intercept)"))
+  }
+  
   if (type=="predictor"){ #i.e. plots with standardize effects 
     
     df=df%>%
@@ -685,27 +696,31 @@ Organize_df=function(df,type="predictor"){
                                    "PL"="PSD exponent","core_area"="Core-area" ))%>%
       mutate(.,Type_pred=unlist(sapply(1:nrow(.),function(x){
         if (.$term[x] %in% c("rho_p","Type_vegGrass_Shrub","Type_vegGrassland","Type_vegShrubland","Woody")) return("Vegetation")
-        if (.$term[x] %in% c("Clim1","Clim2","Clim3","Clim4")) return("Climatic")
-        if (.$term[x] %in% c("Org_C","Sand","Slope")) return("Abiotic")
+        if (.$term[x] %in% c("Clim1","Clim2","Clim3","Clim4","Aridity")) return("Climatic")
+        if (.$term[x] %in% c("Org_C","Sand","Slope","Org_C_v")) return("Abiotic")
         if (.$term[x] %in% unique(df$term)[grep("Grazing",unique(df$term))]) return("Grazing")
         if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geography")
       })))%>%
       mutate(., term=recode_factor(term,
                                    "rho_p"="Cover",
+                                   "Aridity"="Aridity",
                                    "Type_vegGrassland"="Type, grassland",
                                    "Type_vegShrubland"="Type, shrubland",
                                    "Type_vegGrass_Shrub"="Type, both",
-                                   "Org_C"="Facilitation",
+                                   "Org_C"="Organic C.",
+                                   "Org_C_v"="Organic C.",
                                    "Long_sin"="Longitude (sin)",
                                    "Long_cos"="Longitude (cos)",
                                    "Grazing:Type_vegShrubland"="Grazing * Type, shrubland",
                                    "Grazing:Type_vegGrassland"="Grazing * Type, grassland",
                                    "Grazing:Type_vegGrass_Shrub"="Grazing * Type, both",
-                                   "Grazing:Org_C"="Grazing * Facilitation",
+                                   "Grazing:Org_C"="Grazing * Organic C.",
+                                   "Grazing:Org_C_v"="Grazing * Organic C.",
                                    "Clim1:Grazing"="Grazing * Clim1",
                                    "Clim2:Grazing"="Grazing * Clim2",
                                    "Clim3:Grazing"="Grazing * Clim3",
                                    "Clim4:Grazing"="Grazing * Clim4",
+                                   "Aridity:Grazing"="Aridity * Grazing",
                                    "Grazing:Sand"="Grazing * Sand",
                                    "Grazing:Woody"="Grazing * Woody",
                                    "Grazing:rho_p"="Grazing * Cover"))%>%
@@ -719,8 +734,8 @@ Organize_df=function(df,type="predictor"){
     df=df%>%
       mutate(.,Type_pred=unlist(sapply(1:nrow(.),function(x){
         if (.$term[x] %in% c("rho_p","Type_vegGrass_Shrub","Type_vegGrassland","Type_vegShrubland","Woody")) return("Vegetation")
-        if (.$term[x] %in% c("Clim1","Clim2","Clim3","Clim4")) return("Climatic")
-        if (.$term[x] %in% c("Org_C","Sand","Slope")) return("Abiotic")
+        if (.$term[x] %in% c("Clim1","Clim2","Clim3","Clim4","Aridity")) return("Climatic")
+        if (.$term[x] %in% c("Org_C","Sand","Slope","Org_C_v")) return("Abiotic")
         if (.$term[x] %in% unique(df$term)[grep("Grazing",unique(df$term))]) return("Grazing")
         if (.$term[x] %in% c("Long_cos","Long_sin","Lattitude","Elevation")) return("Geography")
       })))
@@ -729,104 +744,26 @@ Organize_df=function(df,type="predictor"){
   return(df)
 }
 
-Plot_SEM_with_cover=function(summary_sem,pdf_=F,name="SEM",title_="",name_var="",MF=F,pval=.05){
-  
-  l=summary_sem$coefficients[,c("Predictor","Response","Estimate","P.Value")]
-  l$color="#9ED471"
-  l$color[which(l$Estimate<0)]="#EFC46A"
-  l$color[which(l$P.Value>pval)]="gray"
-  g = graph.data.frame(l, directed=T)
-  g= g %>% set_edge_attr("color", value =l$color)
-  
-  coord=data.frame(label=c("Grazing","Woody","Cover","Facilitation",paste0(name_var)),
-                   lab2=c("Grazing","Woody","Cover","Facilitation",paste0(name_var)),
-                   x=c(-20,40,-40,20,0),y=c(0,-20,-20,0,-40))
-  
-  EL=as_edgelist(g)
-  EL=cbind(EL,l[,3])
-  EL=as.data.frame(EL)%>%
-    mutate(., V1=recode_factor(V1,"rho_p"="Cover","Org_C"="Facilitation","Resid_mod"=paste0(name_var)))%>%
-    mutate(., V2=recode_factor(V2,"rho_p"="Cover","Org_C"="Facilitation","Resid_mod"=paste0(name_var)))
-  EL=as.matrix(EL)
-  
-  name_edge=sapply(1:length(summary_sem$coefficients$P.Value),function(x){#adding pvalue
-    if (is_signif(summary_sem$coefficients$P.Value[x])==""){
-      return("")
-    }else{
-      return(paste0(round(l[x,3],2))) #,is_signif(summary_sem$coefficients$P.Value[x])))
-    }
-  })
-  
-  asi=abs(l[,3])/0.05
-  asi[asi<5]=5
-  
-  if(pdf_){
-    pdf(paste0("./",name,".pdf"),width = 7,height = 4)
-    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
-           border.color="white",label.cex=1.5,label.scale=F,title=title_,
-           edge.label.cex = 1.2,edge.label.position=0.5,vsize2=4,vsize=30,
-           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
-           mar=rep(3,4))
-    dev.off()
-    
-  }else {
-    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
-           border.color="white",label.cex=1,label.scale=F,title=title_,
-           edge.label.cex = 3,edge.label.position=0.5,vsize2=10,vsize=30,
-           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
-           mar=rep(3,4))
-    
-  }
-}
-
-Get_indirect_effects_grazing=function(summary_sem){
-  
-  coef=summary_sem$coefficients
-  
-  total_indirect=0
-  if (all(coef$P.Value[c(7,3)]<.05)){
-    total_indirect=total_indirect+prod(coef$Estimate[c(7,3)])
-  }
-  if (all(coef$P.Value[c(9,8,3)]<.05)){
-    total_indirect=total_indirect+prod(coef$Estimate[c(9,8,3)])
-  }
-  if (all(coef$P.Value[c(5,2)]<.05)){
-    total_indirect=total_indirect+prod(coef$Estimate[c(2,5)])
-  }
-  if (all(coef$P.Value[c(9,6,2)]<.05)){
-    total_indirect=total_indirect+prod(coef$Estimate[c(9,6,2)])
-  }
-  if (all(coef$P.Value[c(9,4)]<.05)){
-    total_indirect=total_indirect+prod(coef$Estimate[c(9,4)])
-  }
-  
-  Direct_grazing=ifelse(coef$P.Value[c(1)]<.05,coef$Estimate[c(1)],0)
-
-  return(tibble(Path=c("Indirect","Direct"),
-                Effect=c(total_indirect,Direct_grazing)) )
-  
-}
-
 Perform_PCA_spatial_struc=function(df){
   save=df
   df=df%>%
     dplyr::rename("Conditional entropy"="Cond_H",
                   "Contiguity"="contig",
-                  "% landscape covered by core"="core_area_land",
+                  "% landscape \n covered by core"="core_area_land",
                   "Mean % of core in patches"="core_area",
                   "Division"="division",
                   "Bare soil connectivity"="flow_length",
                   "Fractal dimension"="fractal_dim",
-                  "Fractal scaling area, perim."="perim_area_scaling",
+                  "Fractal scaling \n area, perim."="perim_area_scaling",
                   "PLR"="PLR",
-                  "Distance to null expect."="KS_dist",
-                  "Power-law exp. of the PSD"="PL_expo",
+                  "Distance to \n null expect."="KS_dist",
+                  "Power-law exp. \n of the PSD"="PL_expo",
                   "Spectral ratio"="Spectral_ratio",
                   "log (largest patch)"="fmax_psd")
   
   
   #Performing PCA on the spatial structure metrics 
-  struct_variables=colnames(df)[c(8:9,11,14:15,21,22,25)]
+  struct_variables=colnames(df)[c(8:9,11,14:15,20,21,22,25)]
   res.comp=imputePCA(df[,which(colnames(df) %in% struct_variables)],ncp=4,scale = T) 
   
   if ("completeObs" %in% names(res.comp)){
@@ -837,15 +774,15 @@ Perform_PCA_spatial_struc=function(df){
   
   #ploting the PCA
   p=factoextra::fviz_pca_var(res.pca,col.var="#2746B1",
-                             label.var=c("Contiguity","% landscape covered by core",
+                             label.var=c("Contiguity","% landscape \n covered by core",
                                          "Mean % of core in patches","Bare soil connectivity",
-                                         "Fractal scaling area, perim.","PLR","Power-law exp. of the PSD",
-                                         "log (largest patch)"))+
+                                         "Fractal scaling area, perim.","PLR","Power-law exp. \n of the PSD",
+                                         "log (largest patch)","Distance to \n null expect."))+
     the_theme+
     ggtitle("")+
     labs(x=paste0("PC 1 (",round(res.pca$eig[1,2],1),")"),
          y=paste0("PC 2 (",round(res.pca$eig[2,2],1),")"))
-  ggsave("../Figures/Final_figs/SI/PCA_spatial_statistics.pdf",p,width = 7,height = 5)
+  ggsave("../Figures/SI/PCA_spatial_statistics.pdf",p,width = 7,height = 5)
   
   #We extract the first 2 ones (2/3 of the variance) and add them to the data-frame
   save=save%>%
@@ -854,25 +791,6 @@ Perform_PCA_spatial_struc=function(df){
   
 }
 
-Rename_spatial_statistics=function(df){
-  return(df%>%
-           mutate(., Stat=recode_factor(Stat,
-                                        "Cond_H"="Conditional entropy",
-                                        "contig"="Contiguity",
-                                        "core_area_land"="% landscape covered by core",
-                                        "core_area"="Mean % of core in patches",
-                                        "division"="Division",
-                                        "flow_length"="Bare soil connectivity",
-                                        "fractal_dim"="Fractal dimension",
-                                        "perim_area_scaling"="Fractal scaling area, perim.",
-                                        "PLR"="PLR",
-                                        "KS_dist"="Distance to null expect.",
-                                        "PL_expo"="Power-law exp. of the PSD",
-                                        "Struct1"="PC 1 spa. struc.",
-                                        "Struct2" = "PC 2 spa. struc.",
-                                        "Spectral_ratio"="Spectral ratio",
-                                        "fmax_psd"="log (largest patch)")))
-}
 
 Get_data_without_outliers=function(stat,with_cover=T){
   
@@ -925,18 +843,150 @@ Get_data_without_outliers=function(stat,with_cover=T){
 Filter_relevant_stats=function(df){
   return(df%>%filter(., Stat %in% c("PLR","PL_expo","fmax_psd","flow_length",
                                     "perim_area_scaling","core_area","contig",
-                                    "core_area_land","KS_dist")))
+                                    "core_area_land","KS_dist","mean_perim_area")))
 }
 
+Rename_spatial_statistics=function(df){
+  return(df%>%
+           mutate(., Stat=recode_factor(Stat,
+                                        "Cond_H"="Conditional entropy",
+                                        "contig"="Contiguity",
+                                        "core_area_land"="% landscape covered by core",
+                                        "core_area"="Mean % of core in patches",
+                                        "division"="Division",
+                                        "mean_perim_area"="Mean fraction",
+                                        "flow_length"="Bare soil connectivity",
+                                        "fractal_dim"="Fractal dimension",
+                                        "perim_area_scaling"="Fractal scaling area, perim.",
+                                        "PLR"="PLR",
+                                        "KS_dist"="Distance to null expect.",
+                                        "PL_expo"="Power-law exp. of the PSD",
+                                        "Struct1"="PC 1 spa. struc.",
+                                        "Struct2" = "PC 2 spa. struc.",
+                                        "Spectral_ratio"="Spectral ratio",
+                                        "fmax_psd"="log (largest patch)")))
+}
+
+boot_function_lm = function(formula, data, indices) {
+  d = data[indices,] 
+  fit = lm(formula, data=d) 
+  return(summary(fit)$coefficient[2,1])
+}
+
+Get_data_resid_SEM=function(stat,grazing_intensity){
+  
+  dir.create("../Data/SEM/",showWarnings = F)
+  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+    Closer_to_normality(.)
+  d_data[,c(1,9:29,36,38:42,45:ncol(d_data))] = apply(d_data[,c(1,9:29,36,38:42,45:ncol(d_data))],2,z_tranform)
+  d_data=Perform_PCA_spatial_struc(d_data) #Adding the first two components from the PCA
+  
+  
+  if (grazing_intensity=="low"){
+    grazing_values=0:1
+  } else if (grazing_intensity=="high"){
+    grazing_values=2:3
+  } else if (grazing_intensity=="all"){
+    grazing_values=0:3
+  }
+  
+  k=stat
+  
+  model_lmer=lm("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation + Type_veg",
+                data = d_data%>%melt(., measure.vars=k)%>%
+                  filter(., !is.na(value),Grazing %in% grazing_values),
+                na.action = na.omit)
+  
+  #we remove potential outliers
+  rm.outliers = romr.fnc(model_lmer, d_data%>%melt(., measure.vars=k)%>%
+                           filter(., !is.na(value),Grazing %in% grazing_values),
+                         trim=2.5)
+  d_data_out = rm.outliers$data
+  
+  #We first control for all covariates and extract the residuals
+  model_lmer=lm("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation + Type_veg",
+                data = d_data_out,
+                na.action = na.fail)
+  
+  resid_model=residuals(model_lmer) #extract residuals
+  
+  save=d_data_out%>% #add it to the dataframe
+    add_column(., Resid_mod=resid_model)%>%
+    filter(., !is.na(Resid_mod))
+  
+  return(save)
+}
+
+Plot_SEM=function(summary_sem,pdf_=F,name="SEM",title_=""
+                  ,name_var="",type_N="Nitrate",
+                  label_cex=1.5,edge_cex=2){
+  
+  l=as.data.frame(summary_sem$coefficients[,c("Predictor","Response","Estimate","P.Value")]%>%
+    mutate(., 
+           Predictor=recode_factor(Predictor,"Org_C_v"="Organic C.","Total_N"="Total N."),
+           Response=recode_factor(Response,"Org_C_v"="Organic C.","Total_N"="Total N.")
+           ))%>%
+    mutate(., Predictor=as.character(Predictor),Response=as.character(Response))
+    
+  l[nrow(l),1:2]=c("Aridity","Sand")
+  corr_arrow=l[nrow(l),c(2,1,3:ncol(l))];names(corr_arrow)=c("Predictor","Response","Estimate","P.Value")
+  l=rbind(l,corr_arrow)
+  
+  l$color="#9ED471"
+  l$color[which(l$Estimate<0)]="#EFC46A"
+  l$color[which(l$P.Value>.1)]="gray"
+  l$color[which(l$P.Value>.05 & l$P.Value<.1)]="lightblue"
+  g = graph.data.frame(l, directed=T)
+  g= g %>% set_edge_attr("color", value =l$color)
+  
+  coord=data.frame(label=c("Grazing","Organic C.",type_N,"Aridity","Sand",paste0(name_var)),
+                   lab2=c("Grazing","Organic C.",type_N,"Aridity","Sand",paste0(name_var)),
+                   x=c(10,-2,-2,-10,10,30),y=c(-10,25,-25,0,10,0))
+  
+  EL=as_edgelist(g)
+  EL=cbind(EL,l[,3])
+  EL=as.data.frame(EL)%>%
+    mutate(., V1=recode_factor(V1,"rho_p"="Cover","Org_C"="Organic C.","Resid_mod"=paste0(name_var)))%>%
+    mutate(., V2=recode_factor(V2,"rho_p"="Cover","Org_C"="Organic C.","Resid_mod"=paste0(name_var)))
+  EL=as.matrix(EL)
+  
+  name_edge=sapply(1:length(summary_sem$coefficients$P.Value),function(x){#adding pvalue
+    if (is_signif(summary_sem$coefficients$P.Value[x])==""){
+      return(paste0(round(l[x,3],2)))
+    }else{
+      return(paste0(round(l[x,3],2))) #,is_signif(summary_sem$coefficients$P.Value[x])))
+    }
+  })
+  name_edge=c(name_edge,name_edge[length(name_edge)])
+  
+  asi=abs(l[,3])/0.05
+  asi[asi<5]=5
+  
+  if(pdf_){
+    pdf(paste0("./",name,".pdf"),width = 9,height = 6)
+    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
+           border.color="white",label.cex=label_cex,label.scale=F,title=title_,
+           edge.label.cex = edge_cex,edge.label.position=0.5,vsize2=4,vsize=30,
+           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
+           mar=rep(3,4))
+    dev.off()
+    
+  }else {
+    qgraph(EL,layout=as.matrix(coord[,c("x","y")]),edge.color=l$color,edge.labels=name_edge,
+           border.color="white",label.cex=label_cex,label.scale=F,title=title_,
+           edge.label.cex = edge_cex,edge.label.position=0.5,vsize2=4,vsize=30,
+           shape="ellipse",edge.labels=T,fade=F,esize=5,asize=asi,
+           mar=rep(3,4))
+    
+  }
+}
 
 # 5) Model functions ----
 
 
 
 Get_params_model=function(delta,b,c,m,d,r,f,g0,z){
-  
   return(list(
-    
     delta  =  delta ,
     b      =  b     ,
     c      =  c     ,
@@ -959,7 +1009,6 @@ Get_initial_lattice=function(frac=c(.1,.1,.8),size=100){
   
   return(matrix(sample(-1:1,replace = T,size=size*size,prob = frac),ncol=size,nrow=size))
 }
-
 
 fourneighbors = function(landscape, state = 1, bounds = 1) {
   
@@ -1025,7 +1074,6 @@ CA_spatial_model = function(init, params) {
   })
   
 }
-
 
 Run_spatial_model=function(time=seq(1,2000,1),params,ini,plot=F){
   

@@ -42,7 +42,7 @@ end
             Keeping_data[index, 1:2] .= param
             fraction_cover = [0.8, 0.2]
             
-            size_landscape = 80
+            size_landscape = 100
             ini_land = Get_initial_lattice_Eby(frac=fraction_cover, size_mat=size_landscape)
 
             d1, land1 = IBM_Eby_model(time_t=50, param=copy(param), landscape=copy(ini_land),
