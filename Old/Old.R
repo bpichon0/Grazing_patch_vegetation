@@ -3035,3 +3035,286 @@ write.table(d_all,"../Data/Linear_models/Importance_no_inter.csv",sep=";")
 write.table(d_all2,"../Data/Linear_models/Estimators_model_no_inter.csv",sep=";")
 
 
+
+## >> 1) Model with all climatic variables ----
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+d_data[,c(1,9:29,36,38:42,45:ncol(d_data))] = 
+  apply(d_data[,c(1,9:29,36,38:42,45:ncol(d_data))],2,z_tranform)
+d_data=Perform_PCA_spatial_struc(d_data)
+save=d_data
+
+d_slope=tibble()
+for (k in c("perim_area_scaling","fmax_psd","Cond_H","PL_expo","Spectral_ratio",
+            "core_area_land","division","contig","core_area",
+            "flow_length","PLR","KS_dist",
+            "Struct1","Struct2")){
+  
+  #for each we plot the slope against the partial residuals with and without cover
+  
+  
+  d_data_out=read.table(paste0("../Data/Linear_models/Keep_data/Data_",k,"_TRUE.csv"),sep=" ")
+  model_spa_stat=readRDS(paste0("../Data/Linear_models/Keep_models/Mod_",k,"_TRUE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
+  
+  mod_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_cov)$coefficient[2,4],
+                       slope=summary(mod_cov)$coefficient[2,1],
+                       Low_int=confint(mod_cov)[2,1],
+                       High_int=confint(mod_cov)[2,2],
+                       With_cover=T,
+                       Stat=k
+                ))
+  
+  d_data_out=read.table(paste0("../Data/Linear_models/Keep_data/Data_",k,"_FALSE.csv"),sep=" ")
+  model_spa_stat=readRDS(paste0("../Data/Linear_models/Keep_models/Mod_",k,"_FALSE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
+  
+  mod_no_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_no_cov)$coefficient[2,4],
+                       slope=summary(mod_no_cov)$coefficient[2,1],
+                       Low_int=confint(mod_no_cov)[2,1],
+                       High_int=confint(mod_no_cov)[2,2],
+                       With_cover=F,
+                       Stat=k
+                ))
+}
+
+write.table(d_slope,"../Data/Linear_models/Slope_partial_residuals.csv",sep=";")
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+d_data[,c(1,9:29,36,38:42,45:ncol(d_data))] = 
+  apply(d_data[,c(1,9:29,36,38:42,45:ncol(d_data))],2,z_tranform)
+d_data=Perform_PCA_spatial_struc(d_data)
+save=d_data
+
+d_slope=tibble()
+for (k in c("perim_area_scaling","fmax_psd","Cond_H","PL_expo","Spectral_ratio",
+            "core_area_land","division","contig","core_area",
+            "flow_length","PLR","KS_dist",
+            "Struct1","Struct2")){
+  
+  #for each we plot the slope against the partial residuals with and without cover
+  
+  
+  d_data_out=read.table(paste0("../Data/Linear_models/Keep_data/Data_",k,"_TRUE.csv"),sep=" ")
+  model_spa_stat=readRDS(paste0("../Data/Linear_models/Keep_models/Mod_",k,"_TRUE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
+  
+  mod_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_cov)$coefficient[2,4],
+                       slope=summary(mod_cov)$coefficient[2,1],
+                       Low_int=confint(mod_cov)[2,1],
+                       High_int=confint(mod_cov)[2,2],
+                       With_cover=T,
+                       Stat=k
+                ))
+  
+  d_data_out=read.table(paste0("../Data/Linear_models/Keep_data/Data_",k,"_FALSE.csv"),sep=" ")
+  model_spa_stat=readRDS(paste0("../Data/Linear_models/Keep_models/Mod_",k,"_FALSE.rds"))
+  
+  resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
+  
+  mod_no_cov=lm(visregRes~Grazing,resid_mod$res)
+  
+  d_slope=rbind(d_slope,
+                tibble(pval=summary(mod_no_cov)$coefficient[2,4],
+                       slope=summary(mod_no_cov)$coefficient[2,1],
+                       Low_int=confint(mod_no_cov)[2,1],
+                       High_int=confint(mod_no_cov)[2,2],
+                       With_cover=F,
+                       Stat=k
+                ))
+}
+
+write.table(d_slope,"../Data/Linear_models/Slope_partial_residuals.csv",sep=";")
+
+
+
+#Residuals without cover in the model
+
+
+list_title=c("PLR","Power-law exp. of the PSD",
+             "log (largest patch)","Bare soil connectivity",
+             "Fractal scaling area, perim.","Mean % of core in patches",
+             "Contiguity",
+             "% landscape covered by core")
+
+list_name_x=c("Grazing intensity","Facilitation",
+              'PC1 climatic variables',"PC2 climatic variables",
+              "PC3 climatic variables","PC4 climatic variables","Sand","% woody cover")
+
+abrev_metric=c("","F","C1","C2","C3","C4","S","W")
+
+
+list_labels_plot=c(
+  "'Y = ' * alpha[1] * 'G*' * + alpha[2] * 'F'* + alpha[3] *  'F x G'",
+  "'Y = ' * alpha[1] * 'G*' * + alpha[2] * 'C2***'* + alpha[3] *  'C2 x G'",
+  "'Y = ' * alpha[1] * 'G*' * + alpha[2] * 'C4'* + alpha[3] *  'C4 x G*'",
+  "'Y = ' * alpha[1] * 'G**' * + alpha[2] * 'C2***'* + alpha[3] *  'C2 x G**'",
+  "'Y = ' * alpha[1] * 'G**' * + alpha[2] * 'C3***'* + alpha[3] *  'C3 x G'",
+  "'Y = ' * alpha[1] * 'G*' * + alpha[2] * 'C4***'* + alpha[3] *  'C4 x G***'",
+  "'Y = ' * alpha[1] * 'G**' * + alpha[2] * 'W?'* + alpha[3] *  'W x G'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C2***'* + alpha[3] *  'C2 x G***'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C3***'* + alpha[3] *  'C3 x G?'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C4*'* + alpha[3] *  'C4 x G'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'W**'* + alpha[3] *  'W x G'",
+  "'Y = ' * alpha[1] * 'G*' * + alpha[2] * 'F***'* + alpha[3] *  'F x G***'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C1***'* + alpha[3] *  'C1 x G***'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C3***'* + alpha[3] *  'C3 x G'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C4***'* + alpha[3] *  'C3 x G'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C4***'* + alpha[3] *  'C3 x G'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'S'* + alpha[3] *  'S x G'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'F***'* + alpha[3] *  'F x G***'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C1'* + alpha[3] *  'C1 x G***'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C2***'* + alpha[3] *  'C1 x G**'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'F***'* + alpha[3] *  'F x G***'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'C2***'* + alpha[3] *  'C2 x G'",
+  "'Y = ' * alpha[1] * 'G' * + alpha[2] * 'F***'* + alpha[3] *  'F x G***'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C1***'* + alpha[3] *  'C1 x G***'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C2***'* + alpha[3] *  'C2 x G'",
+  "'Y = ' * alpha[1] * 'G***' * + alpha[2] * 'C4***'* + alpha[3] *  'C4 x G'" )
+
+
+
+
+ID_label=ID_title=1
+
+for (stat in c("PLR","PL_expo","fmax_psd","flow_length",
+               "perim_area_scaling","core_area","contig",
+               "core_area_land",
+               "KS_dist")){
+  
+  title=list_title[ID_title]  
+  
+  ID_plot=1
+  list_plot=list()
+  ID_x=1
+  
+  for (metric in c("Type_veg","Org_C","Clim1","Clim2","Clim3","Clim4","Sand","Woody")){
+    
+    name_x=list_name_x[ID_x]
+    
+    d_data_out=  read.table(paste0("../Data/Linear_models/Keep_data/Data_",stat,"_FALSE.csv"),sep=";")
+    if (ncol(d_data_out)==1){
+      d_data_out=  read.table(paste0("../Data/Linear_models/Keep_data/Data_",stat,"_FALSE.csv"),sep=" ")
+    }
+    model_spa_stat=readRDS(paste0("../Data/Linear_models/Keep_models/Mod_",stat,"_FALSE.rds"))
+    
+    
+    if (metric=="Type_veg" & "Type_vegGrassland" %in% rownames(summary(model_spa_stat)$coefficients)){
+      
+      resid_mod=visreg::visreg(fit = model_spa_stat,xvar = "Grazing",by="Type_veg",plot=F) #extracting residuals
+      
+      p_val=tibble(pval=c(summary(lm(visregRes~Grazing,resid_mod$res%>%filter(.,Type_veg=="Grass_Shrub")))$coefficients[2,4],
+                          summary(lm(visregRes~Grazing,resid_mod$res%>%filter(.,Type_veg=="Forest")))$coefficients[2,4],
+                          summary(lm(visregRes~Grazing,resid_mod$res%>%filter(.,Type_veg=="Grassland")))$coefficients[2,4],
+                          summary(lm(visregRes~Grazing,resid_mod$res%>%filter(.,Type_veg=="Shrubland")))$coefficients[2,4]),
+                   Habitat=c("Grass_Shrub","Forest","Grassland","Shrubland")
+      )
+      
+      if (all(p_val$pval<.05)){
+        label_pval="P slopes < 0.05"
+      }else if (all(p_val$pval>.05)){
+        label_pval="NS"
+      }else {
+        label_pval=paste0(    sapply(which(p_val$pval>.05),function(x){return(
+          paste0(p_val$Habitat[x]," = NS")
+        )}),collapse = ", "
+        )
+      }
+      
+      annot_mod=annotate("text", x =1.5 , y = min(resid_mod$res$visregRes),
+                         label = label_pval,size=5)
+      
+      list_plot[[ID_plot]]=ggplot(resid_mod$res%>%
+                                    mutate(., Type_veg=as.character(Type_veg)))+
+        geom_jitter(aes(Grazing,visregRes),color="black",alpha=.2,width = .1)+
+        geom_smooth(aes(Grazing,visregRes,fill=Type_veg,color=Type_veg),method = "lm",level=.95)+
+        scale_x_continuous(labels = c("Ungrazed","Low","Medium","High"))+
+        annot_mod+
+        the_theme+
+        scale_color_manual(values=c("#05401E","#D7414F","#41D77C","#6367C3"),
+                           labels=c("Forest","Grass & Shrubs","Grassland","Shrubland"))+
+        scale_fill_manual(values=c("#05401E","#D7414F","#41D77C","#6367C3"),
+                          labels=c("Forest","Grass & Shrubs","Grassland","Shrubland"))+
+        labs(x=name_x,y=title,fill="",color="")+
+        theme(title=element_text(size=13),axis.title = element_text(size=15))
+      
+      
+      ID_plot=ID_plot+1
+      
+      
+    }else if (metric  %in% rownames(summary(model_spa_stat)$coefficients)){
+      
+      resid_mod=visreg::visreg(fit = model_spa_stat,xvar = metric,by="Grazing",plot=F) #extracting residuals
+      resid_mod$res$Grazing=rep(0:3,as.vector(table(d_data_out$Grazing))) #correcting vigreg output
+      
+      p_val=sapply(summary(lm(formula(paste("visregRes~Grazing+",metric,"+",metric,"*Grazing")),resid_mod$res))$coefficients[-1,4],
+                   function(x){return(is_signif(x))})
+      
+      
+      annot_mod=annotate("text", x = (max(resid_mod$res[,metric])+min(resid_mod$res[,metric]))/2,
+                         y = min(resid_mod$res$visregRes), parse = TRUE,
+                         label = list_labels_plot[ID_label],size=5)
+      
+      ID_label=ID_label+1
+      
+      
+      
+      list_plot[[ID_plot]]=ggplot(resid_mod$res%>%
+                                    mutate(., Grazing=as.character(Grazing))%>%
+                                    dplyr::select(., -value)%>%
+                                    melt(., measure.vars=metric)%>%arrange(., Grazing,decreasing=T))+
+        geom_point(aes(value,visregRes),color="gray30",alpha=.2)+
+        geom_smooth(aes(value,visregRes,fill=Grazing,color=Grazing),method = "lm",level=.95)+
+        annot_mod+
+        the_theme+
+        scale_color_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"),
+                           labels=c("Ungrazed","Low","Medium","High"))+
+        scale_fill_manual(values=c("0"="#FFC170",'1'="#43FFF4","2"="#5196F9","3"="#012E71"),
+                          labels=c("Ungrazed","Low","Medium","High"))+
+        labs(x=name_x,y=title,fill="",color="")+
+        theme(title=element_text(size=13),axis.title = element_text(size=15))
+      
+      ID_plot=ID_plot+1
+      
+    }
+    
+    
+    ID_x=ID_x+1
+  }
+  
+  
+  if (stat=="perim_area_scaling"){
+    p=ggarrange(plotlist=list_plot,ncol = length(list_plot),nrow = 1,legend = "bottom",labels = c("i","ii","iii","iv","v")[1:length(list_plot)])
+  }else{
+    p=ggarrange(plotlist=list_plot,ncol = length(list_plot),nrow = 1,legend = "none",labels = c("i","ii","iii","iv","v")[1:length(list_plot)])
+  }
+  
+  
+  ggsave(paste0("../Figures/Linear_models/",
+                "Interaction_no_cover/All_interactions_",stat,".pdf"),p,width = 4*length(list_plot),height = 4)
+  
+  ID_title=ID_title+1
+  
+}
+
+
+
+
+
+
+
+
