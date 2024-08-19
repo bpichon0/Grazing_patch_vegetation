@@ -7,7 +7,7 @@
 This repository contains the code used to perform the analyses for both main text and supplementary information. All the code was made on R (*v4.1.0*).
 
 <p align="center">
-    <img src="https://github.com/bpichon0/Grazing_patch_vegetation/blob/master/Fig.overview.jpg" width="800">
+    <img src="https://github.com/bpichon0/Grazing_patch_vegetation/blob/master/Fig_overview.jpg" width="800">
 </p>
 
 
