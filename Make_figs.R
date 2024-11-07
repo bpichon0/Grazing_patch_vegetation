@@ -5,8 +5,8 @@ source("./Structure_grazing_function.R")
 
 ## >> Figure 2: Partial residuals grazing intensity spatial structure ----
 
-d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
-  dplyr::filter(., With_cover==0,Grazing_intensity=="all")%>%
+d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity.csv",sep=";")%>%
+  dplyr::filter(., With_cover==0,Grazing_intensity=="all",Driver!="Herbivores")%>%
   Filter_relevant_stats(.)%>%  
   Rename_spatial_statistics(.)%>%
   mutate(., ID_grazing=as.character(ID_grazing))%>%
@@ -60,8 +60,8 @@ p1=ggplot(d_slope)+
   guides(color=guide_legend(ncol=4))+
   theme(legend.position="bottom")#c(.2,.65))
 
-d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
-  dplyr::filter(., With_cover==0,Grazing_intensity=="all",Stat=="Struct1")%>%
+d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity.csv",sep=";")%>%
+  dplyr::filter(., With_cover==0,Grazing_intensity=="all",Stat=="Struct1",Driver!="Herbivores")%>%
   Rename_spatial_statistics(.)%>%
   mutate(., ID_grazing=as.character(ID_grazing))%>%
   arrange(., q2)%>%
@@ -186,25 +186,24 @@ for (cover_id in 1:3){
   }
 }
 
-
 p_landscapes=ggarrange(p13+
-                         theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
                        p12+
-                         theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
                        p11+
-                         theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
                        p23+
-                         theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
                        p22+
-                         theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
                        p21+
-                         theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
                        p33+
-                         theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
                        p32+
-                         theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
                        p31+
-                         theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
                        nrow=3,ncol=3)
 p_arrow_top=ggplot(NULL) + 
   geom_line(data=tibble(x=c(0,1),y=c(1,1)),
@@ -238,74 +237,211 @@ ggsave("../Figures/Effect_size_simulations.pdf",p_tot,width = 18,height = 8)
 
 ## >> Figure 4: Traits ----
 #See outputs of the SEMs in Step 4 of "Structure_grazing_main.R
-d_CI_dsep=read.table("../Data/Dsep/CI_links_dsep.csv",sep=";")
+d_all=read.table("../Data/Dsep/CI_links_dsep.csv",sep=";")%>%
+  dplyr::filter(., Variable %!in% c("(Intercept)","Elevation","Long_cos","Long_sin","Lattitude"))
+
+#Computing indirect effects
+
+AI_woody=d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Aridity")]
+
+Grazing_woody=d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Grazing")]
+
+AI_size_D=d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Aridity")]
+
+Grazing_size_D=d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Grazing")]
+
+AI_size_I=d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Aridity")] * 
+  d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Woody")]
+
+Grazing_size_I=d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Grazing")] * 
+  d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Woody")]
+
+AI_size_T=sum(c(d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Aridity")],
+                d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Aridity")])*
+                c(d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Woody")],1))
+
+Grazing_size_T=sum(c(d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Grazing")],
+                     d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Grazing")])*
+                     c(d_all$q2[which(d_all$Response=="CWM_MaxLS" & d_all$Variable=="Woody")],1))
+
+AI_DevLS_D=d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Aridity")]
+
+Grazing_DevLS_D=d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Grazing")]
+
+AI_DevLS_I=AI_size_T*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="CWM_MaxLS")]+
+  d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Aridity")]*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Woody")]
+
+Grazing_DevLS_I=Grazing_size_T*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="CWM_MaxLS")]+
+  d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Grazing")]*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Woody")]
+
+AI_DevLS_T=AI_size_T*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="CWM_MaxLS")]+
+  d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Aridity")]*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Woody")]+
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Aridity")]
+
+Grazing_DevLS_T=Grazing_size_T*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="CWM_MaxLS")]+
+  d_all$q2[which(d_all$Response=="Woody" & d_all$Variable=="Grazing")]*
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Woody")]+
+  d_all$q2[which(d_all$Response=="Dev_MaxLS" & d_all$Variable=="Grazing")]
+
+AI_PC1=AI_size_T*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="CWM_MaxLS")]+ #Size
+  
+  AI_DevLS_T*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="Dev_MaxLS")]+    #dev maxLS
+  
+  AI_woody*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="Woody")]              #Woody
+
+Grazing_PC1=Grazing_size_T*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="CWM_MaxLS")]+ #Size
+  
+  Grazing_DevLS_T*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="Dev_MaxLS")]+    #dev maxLS
+  
+  Grazing_woody*d_all$q2[which(d_all$Response=="Struct_PC1" & d_all$Variable=="Woody")]              #Woody
 
 
-d_data=Perform_PCA_spatial_struc(
-  Closer_to_normality_CWM(
-    read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";")))%>%
-  mutate(., Grazing=as.factor(Grazing))
 
-relationship_d=confint(lm(scale(d_data$Struct1)[,1]~scale(-d_data$Dev_MaxLS)[,1]))
-confint(lm(scale(d_data$Struct1)[,1]~scale(-d_data$Dev_MaxLS)[,1]),level = 0)
-relationship_c=confint(lm(scale(d_data$Struct1)[,1]~scale(d_data$Woody)[,1]))
-confint(lm(scale(d_data$Struct1)[,1]~scale(d_data$Woody)[,1]),level = 0)
-relationship_b=confint(lm(scale(d_data$Struct1)[,1]~scale(d_data$CWM_MaxLS)[,1]))
-confint(lm(scale(d_data$Struct1)[,1]~scale(d_data$CWM_MaxLS)[,1]),level = 0)
+d_indirect=tibble(
+  Indirect=c(0,0,AI_size_I,Grazing_size_I,AI_DevLS_I,Grazing_DevLS_I,AI_PC1,Grazing_PC1),
+  Direct=c(AI_woody,Grazing_woody,AI_size_D,Grazing_size_D,AI_DevLS_D,Grazing_DevLS_D,0,0),
+  Total=c(AI_woody,Grazing_woody,AI_size_T,Grazing_size_T,AI_DevLS_T,Grazing_DevLS_T,AI_PC1,Grazing_PC1),
+  Effect=rep(c("Aridity","Grazing"),4),
+  Response=c(rep("% of Woody",2),rep("Average plant size (cLS)",2),rep("Trait spatial aggregation (DevLS)",2),rep("PC 1 sp. struct.",2))
+)%>%melt(., id.vars=c("Effect","Response"))
 
 
-pb=ggplot(d_data)+
-  geom_point(aes(x=Woody,y=Struct1),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=Woody,y=Struct1),fill="lightblue",color="black",method = "lm")+
-  annotate("text",x=.27,y=6,label=paste0("Slope = 0.35 (",round(relationship_b[2,1],2),",",round(relationship_b[2,2],2),")"))+
-  the_theme2+
-  labs(x="% of woody species in quadrats",y="PC 1 spatial structure")
+for (k in 1:4){
+  assign(paste0("p2",k),
+         ggplot(d_indirect[-which(d_indirect$Response=="PC 1 sp. struct." & d_indirect$variable %in% c("Direct","Indirect")|
+                                    d_indirect$Response=="% of Woody" & d_indirect$variable %in% c("Total","Indirect")),]%>%
+                  dplyr::filter(., Response==unique(d_indirect$Response)[k]))+
+                             geom_bar(aes(x=value,y=(variable),
+                                          group=interaction(variable,Response,Effect),fill=Effect),
+                                      stat="identity", 
+                                      width =.5, position=position_dodge())+
+                             the_theme2+
+                             geom_hline(yintercept = 0)+
+                             facet_wrap(.~Response,scales = "free")+
+                             coord_flip()+
+                             labs(x="Effect size",y="",color="")+
+                             guides(fill="none")+
+                             scale_fill_manual(values=c("#FFE699","#F3A875"))
+         
+         )
+}
 
-pc=ggplot(d_data)+
-  geom_point(aes(x=CWM_MaxLS,y=Struct1),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=Struct1),fill="lightblue",color="black",method = "lm")+
-  annotate("text",x=4,y=6,label=paste0("Slope = 0.51 (",round(relationship_b[2,1],2),",",round(relationship_b[2,2],2),")"))+
-  the_theme2+
-  labs(x="CWM lateral spread",y="PC 1 spatial structure")
 
-pd=ggplot(d_data)+
-  geom_point(aes(x=-Dev_MaxLS,y=Struct1),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=-Dev_MaxLS,y=Struct1),fill="lightblue",color="black",method = "lm")+
-  annotate("text",x=-1000,y=6,label=paste0("Slope = 0.17 (",round(relationship_d[2,1],2),",",round(relationship_d[2,2],2),")"))+
-  the_theme2+
-  labs(x="Trait spatial aggregation (Lateral spread)",y="PC 1 spatial structure")
-
-p=ggarrange(pb,pc,pd,labels = letters[2:4],ncol=3)
-p_tot=ggarrange(ggplot()+theme_void(),p,nrow=2,heights = c(.7,.5),labels = c("a",""))
-
-ggsave("../Figures/SEM_traits_spatial_structure.pdf",p_tot,width = 12,height = 9)
+p_tot=ggarrange(
+  ggarrange(p22+theme(panel.border = element_rect(color="#A8D18F",size=1),
+                      axis.line = element_line(color="#A8D18F",size=1)),
+            p21+theme(panel.border = element_rect(color="#A8D18F",size=1),
+                      axis.line = element_line(color="#A8D18F",size=1)),ncol=2,widths = c(1,.5)),
+  ggarrange(p23+theme(panel.border = element_rect(color="#A8D18F",size=1),
+                      axis.line = element_line(color="#A8D18F",size=1)),
+            p24+theme(panel.border = element_rect(color="#C376EF",size=1),
+                      axis.line = element_line(color="#C376EF",size=1)),ncol=2,widths = c(1,.5)),
+  nrow=2
+)
+p_tot=ggarrange(ggplot()+theme_void(),p_tot,ncol=2,widths =  c(1,.8),labels = letters[1:2])
+ggsave("../Figures/SEM_traits_spatial_structure.pdf",p_tot,width = 12,height = 6)
 
  
-# pb=ggplot(d_partial%>%filter(., Drivers=="woody"))+
-#   geom_point(aes(x=Value,y=Residuals),shape=21,size=2,fill="lightblue",color="black")+
-#   #geom_smooth(aes(x=Value,y=Residuals),fill="lightblue",color="black",method = "lm")+
-#   the_theme2+
-#   labs(x="% of woody species in quadrats",y="PC 1 spatial structure")
-# 
-# pc=ggplot(d_partial%>%filter(., Drivers=="CWM_MaxLS"))+
-#   geom_point(aes(x=Value,y=Residuals),shape=21,size=2,fill="lightblue",color="black")+
-#   geom_smooth(aes(x=Value,y=Residuals),fill="lightblue",color="black",method = "lm")+
-#   the_theme2+
-#   labs(x="CWM lateral spread",y="PC 1 spatial structure")
-# 
-# pd=ggplot(d_partial%>%filter(., Drivers=="DevMAxLS"))+
-#   geom_point(aes(x=Value,y=Residuals),shape=21,size=2,fill="lightblue",color="black")+
-#   geom_smooth(aes(x=Value,y=Residuals),fill="lightblue",color="black",method = "lm")+
-#   the_theme2+
-#   labs(x="Trait spatial aggregation (Lateral spread)",y="PC 1 spatial structure")
-# 
-# p=ggarrange(pb,pc,pd,labels = letters[2:4],ncol=3)
-# p_tot=ggarrange(ggplot()+theme_void(),p,nrow=2,heights = c(.7,.5),labels = c("a",""))
 
-# ggsave("../Figures/SEM_traits_spatial_structure.pdf",p_tot,width = 12,height = 9)
+## >> Figure 5: Type herbivores ----
+
+d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity.csv",sep=";")%>%
+  dplyr::filter(., With_cover==0,Grazing_intensity=="all",Driver=="Herbivores")%>%
+  Filter_relevant_stats(.)%>%  
+  Rename_spatial_statistics(.)%>%
+  mutate(., ID_grazing=as.character(ID_grazing))%>%
+  arrange(., q2)%>%
+  add_column(., Order_f=1:nrow(.))%>%
+  mutate(.,Stat = fct_reorder(Stat, Order_f))%>%
+  add_column(., Signif=.$pval<.05)%>%
+  arrange(., Stat,q2)%>%
+  add_column(., Order_stat=rep(3:1,nrow(.)/3))%>%
+  mutate(.,ID_grazing = fct_reorder(ID_grazing, Order_stat))%>%
+  add_column(., Type_stat=sapply(1:nrow(.),function(x){
+    if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
+                         "Mean patch size","Number of smallest patches")){
+      return("Patch-size")
+    }else if (.$Stat[x] =="Bare soil connectivity"){
+      return("Hydro.")
+    }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
+      return("Autocor.")
+    }else{
+      return("Geom.")
+    }
+  }))%>%
+  mutate(., Stat=recode_factor(Stat,
+                               "Mean % of core pixels in patches"="Mean % of core \n pixels in patches",
+                               "flow_length"="Bare soil connectivity",
+                               "Spatial autocorrelation of vege."="Spatial autocorr. \n of vege.",
+                               "Power-law exp. of the PSD"="Power-law exponent \n of the PSD"))
+
+p=ggplot(d_slope)+
+  geom_vline(xintercept = 0,linetype=9)+
+  
+  geom_linerange(aes(x=q2,y=Stat,xmin=q1_90,xmax=q3_90,color=as.factor(ID_grazing)),
+                 lwd=1.5,position=position_jitterdodge(seed=123))+   
+  geom_linerange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,color=as.factor(ID_grazing)),
+                 lwd=.5,position=position_jitterdodge(seed=123))+  
+  geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(ID_grazing)),color="transparent",
+                  size=.15,position=position_jitterdodge(seed=123),shape=21)+  
+  
+  the_theme2+
+  scale_fill_manual(values=c("grey20","grey20","grey20","grey20"))+
+  scale_shape_manual(values=c(21,16))+
+  labs(x=substitute(paste(beta," (partial residuals, relative to cattle)")),y="",color="")+
+  guides(shape="none",fill="none")+
+  theme(panel.background = element_rect(fill="white"),
+        legend.text = element_text(size=8))+
+  guides(color=guide_legend(ncol=4))+
+  scale_color_manual(values=c("orange","violet","lightblue"))+
+  facet_grid(Type_stat ~ ., space = "free_y", 
+             scale = "free_y")
+  
 
 
-## >> Figure 5: Consequence resilience ----
+# 
+# d_data2=Perform_PCA_spatial_struc(
+#   Closer_to_normality_CWM(
+#     read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";")))%>%
+#   mutate(., Grazing=as.factor(Grazing),ID=as.character(ID))%>%
+#   mutate(., Dev_MaxLS=-Dev_MaxLS,#positive values = facilitation
+#          Grazing=scale(as.numeric(Grazing))[,1])
+# 
+# 
+# p2=ggplot(d_data2%>%dplyr::filter(., !is.na(Herbivores)))+
+#   geom_boxplot(aes(x=Herbivores,y=CWM_MaxLS,fill=Herbivores),width=.3,outlier.shape = NA)+
+#   scale_fill_manual(values=c("orange","violet","lightblue","forestgreen"))+
+#   the_theme2+
+#   labs(x="",y="Average plant size \n (cLS)")
+# 
+# 
+# p3=ggplot(d_data2%>%dplyr::filter(., !is.na(Herbivores)))+
+#   geom_boxplot(aes(x=Herbivores,y=Dev_MaxLS,fill=Herbivores),width=.3,outlier.shape = NA)+
+#   scale_fill_manual(values=c("orange","violet","lightblue","forestgreen"))+
+#   the_theme2+
+#   labs(x="",y="Trait aggregation \n (DevLS)")
+# 
+# 
+# p4=ggplot(d_data2%>%dplyr::filter(., !is.na(Herbivores)))+
+#   geom_boxplot(aes(x=Herbivores,y=Woody,fill=Herbivores),width=.3,outlier.shape = NA)+
+#   scale_fill_manual(values=c("orange","violet","lightblue","forestgreen"))+
+#   the_theme2+
+#   labs(x="",y="% of woody \n species")
+# 
+# p_tot=ggarrange(p,ggarrange(p2,p3,p4,nrow=3,labels = letters[2:4],common.legend = T,legend = "none"),
+#           labels = c("a",""),ncol=2,widths = c(1.2,1))
+
+p_tot=p
+ggsave("../Figures/Type_herbivores.pdf",p_tot,width = 5,height = 5)
+
+## >> Figure 6: Consequence resilience ----
 
 # 
 # d=read.table("./All_d.csv",sep=";")%>%
@@ -455,69 +591,6 @@ p_tot=ggarrange(ggarrange(p0,
 ggsave("../Figures/Consequence_resilience.pdf",p_tot,width = 12,height = 12)
 
 # -------------------- SI figures ---------------------------
-## >> Importance grazing with other variables ----
-
-#Importance using multimodel selection 
-with_cov=F
-d_all=read.table(paste0("../Data/Linear_models_factor_cover_control/Importance_aridity_no_inter_factor.csv"),sep=";")%>%
-  dplyr::rename(., Stat=Sp_stat)%>%
-  Filter_relevant_stats(.)%>%
-  dplyr::filter(., Grazing_intensity=="all",With_cover==with_cov)%>%
-  dplyr::select(., -Interactions,-Grazing_intensity,-With_cover,-Woody)
-
-
-
-mean_imp=as_tibble(t(colMeans(d_all[,-c(1,2,ncol(d_all))])))
-
-d_prep=rbind(cbind("Stat"="Averaged across \n spatial statistics",
-                   (mean_imp-mean_imp)), #to have white box
-             d_all[,-c(2,ncol(d_all))])%>%
-  
-  # add_column(., "R2"=0)%>%
-  # dplyr::select(., -Cover)%>%
-  # dplyr::relocate(., R2, .after = Grazing)%>%
-  melt(., measure.vars=colnames(.)[4:(ncol(.))])%>%
-  Rename_spatial_statistics(.)%>%
-  mutate(., variable=recode_factor(variable,"Org_C"="Org. Carb.",
-                                   "Interactions"="Interactions \n with grazing",
-                                   "Type_veg"="Type vegetation"))%>%
-  #arranging order for predictors (xaxis)
-  add_column(., Order_stat=rep(rev(1:(length(unique(d_all$Stat))+1)),
-                               nrow(.)/(length(unique(d_all$Stat))+1)))%>%
-  mutate(Stat = fct_reorder(Stat, Order_stat))%>%
-  Rename_spatial_statistics(.)%>%
-  
-  #arranging order for stats
-  add_column(., Order_f=rep(c(sapply(c(3:ncol(mean_imp)),
-                                     function(x){
-                                       return(which(round(mean_imp[1,x]%>%pull(.),5) ==
-                                                      round(sort(as.numeric(mean_imp[1,c(3:ncol(mean_imp))]),
-                                                                 decreasing = T),5)))})),
-                            each=(length(unique(d_all$Stat))+1)))%>%
-  mutate(variable = fct_reorder(variable, Order_f))
-
-
-n_var=length(unique(d_prep$variable))
-n_metric=length(unique(d_prep$Stat))
-
-p=ggplot(d_prep)+
-  geom_tile(aes(x=variable,y=Stat,fill=value))+
-  geom_text(data=tibble(x=1:(n_var),y=n_metric,
-                        label=round(sort(as.numeric(mean_imp)[-c(1,2)],decreasing = T),2)),
-            aes(x=x,y=y,label=paste0(label)),size=3)+
-  scale_fill_gradientn(colours = colorRampPalette(c("white","grey","grey30"))(100))+
-  the_theme+
-  # facet_grid(Type_stat ~ ., space = "free_y", 
-  #            scale = "free_y")+
-  theme(panel.background = element_rect(fill="white"),panel.border = element_rect(colour = "transparent", fill=NA))+
-  theme(axis.text.x = element_text(angle=60,hjust=1))+
-  labs(x="",y="Spatial statistic",fill="Akaike weight importance")
-
-ggsave("../Figures/Importance_grazing_other_variables.pdf",
-       p,width = 6,height = 5)
-
-
-
 ## >> Selection criteria for images ----
 info_kmean=read.table("../Data/Landscapes/Kmean_clust_info.csv",sep=",",header = T)%>%
   dplyr::filter(., Size!=200,Dataset=="biodesert")%>%
@@ -734,6 +807,61 @@ p=ggplot(d_data%>%
 ggsave("../Figures/SI/Distribution_spatial_stat_grazing_control_cover.pdf",p,width = 11,height = 7)
 
 
+
+
+d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
+  Closer_to_normality(.)
+
+p=ggplot(d_data%>%
+           melt(., measure.vars = c("PL_expo","fmax_psd","flow_length",
+                                    "moran_I","core_area","Small_patches",
+                                    "mean_psd"))%>%
+           mutate(., variable=recode_factor(variable,
+                                            "core_area"="Mean % of core pixels in patches",
+                                            "flow_length"="Bare soil connectivity",
+                                            "Small_patches"="Number of smallest patches",
+                                            "mean_psd"="Mean patch size",
+                                            "moran_I"="Spatial autocorrelation of vege.",
+                                            "PL_expo"="Power-law exp. of the PSD",
+                                            "fmax_psd"="log (largest patch)")))+
+  geom_boxplot(aes(x=Grazing,y=value,group=as.factor(Grazing)),outlier.shape = NA)+
+  geom_jitter(aes(x=Grazing,y=value,color=as.factor(Grazing)),size=.5,alpha=.5)+
+  scale_color_manual(values=c("orange","violet","lightblue","forestgreen"))+
+  facet_wrap(.~variable,scales = "free",nrow = 3)+
+  scale_x_continuous(breaks = c(0,1,2,3),labels=c("Ungrazed","Low","Medium","High"))+
+  the_theme2+
+  labs(x="Grazing intensity",y="")+
+  theme(legend.position = "none")
+
+ggsave("../Figures/SI/Distribution_spatial_stat_herbivores.pdf",p,width = 11,height = 7)
+
+d_data=read.table("../Data/Spatial_structure_grazing_control_cover.csv",sep=";")
+
+p=ggplot(d_data%>%
+           melt(., measure.vars = c("PL_expo","fmax_psd","flow_length",
+                                    "moran_I","core_area","Small_patches",
+                                    "mean_psd"))%>%
+           mutate(., variable=recode_factor(variable,
+                                            "core_area"="Mean % of core pixels in patches",
+                                            "flow_length"="Bare soil connectivity",
+                                            "Small_patches"="Number of smallest patches",
+                                            "mean_psd"="Mean patch size",
+                                            "moran_I"="Spatial autocorrelation of vege.",
+                                            "PL_expo"="Power-law exp. of the PSD",
+                                            "fmax_psd"="log (largest patch)")))+
+  geom_boxplot(aes(x=Grazing,y=value,group=as.factor(Grazing)),outlier.shape = NA)+
+  geom_jitter(aes(x=Grazing,y=value,color=as.factor(Grazing)),size=.5,alpha=.5)+
+  scale_color_manual(values=c("orange","violet","lightblue","forestgreen"))+
+  facet_wrap(.~variable,scales = "free",nrow = 3)+
+  scale_x_continuous(breaks = c(0,1,2,3),labels=c("Ungrazed","Low","Medium","High"))+
+  the_theme2+
+  labs(x="Grazing intensity",y="")+
+  theme(legend.position = "none")
+
+ggsave("../Figures/SI/Distribution_spatial_stat_herbivores_control_cover.pdf",p,width = 11,height = 7)
+
+
+
 ## >> Spatial metrics and aridity ----
 
 d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
@@ -759,78 +887,6 @@ p=ggplot(d_data%>%
 
 ggsave("../Figures/SI/Distribution_spatial_stat_aridity.pdf",p,width = 11,height = 7)
 
-## >> Importance of grazing and other variables without vegetation cover ----
-
-#Importance using multimodel selection 
-
-with_cov=F
-d_all=read.table(paste0("../Data/Linear_models_factor/Importance_aridity_no_inter_factor.csv"),sep=";")%>%
-  dplyr::rename(., Stat=Sp_stat)%>%
-  Filter_relevant_stats(.)%>%
-  dplyr::filter(., Grazing_intensity=="all",With_cover==with_cov)%>%
-  dplyr::select(., -Interactions,-Grazing_intensity,-With_cover,-Woody)
-
-
-
-mean_imp=as_tibble(t(colMeans(d_all[,-c(1,2,ncol(d_all))])))
-
-d_prep=rbind(cbind("Stat"="Averaged across \n spatial statistics",
-                   (mean_imp-mean_imp)), #to have white box
-             d_all[,-c(2,ncol(d_all))])%>%
-  
-  # add_column(., "R2"=0)%>%
-  # dplyr::relocate(., R2, .after = Grazing)%>%
-  melt(., measure.vars=colnames(.)[4:(ncol(.))])%>%
-  add_column(., Type_stat=sapply(1:nrow(.),function(x){
-    if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
-                         "Mean patch size","Number of smallest patches")){
-      return("Patch-size")
-    }else if (.$Stat[x] =="Bare soil connectivity"){
-      return("Hydro.")
-    }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
-      return("Autocorr.")
-    }else{
-      return("Geom.")
-    }
-  }))%>%
-  Rename_spatial_statistics(.)%>%
-  mutate(., variable=recode_factor(variable,"Org_C"="Org. Carb.",
-                                   "Interactions"="Interactions \n with grazing",
-                                   "Type_veg"="Type vegetation"))%>%
-  #arranging order for predictors (xaxis)
-  add_column(., Order_stat=rep(rev(1:(length(unique(d_all$Stat))+1)),
-                               nrow(.)/(length(unique(d_all$Stat))+1)))%>%
-  mutate(Stat = fct_reorder(Stat, Order_stat))%>%
-  Rename_spatial_statistics(.)%>%
-  
-  #arranging order for stats
-  add_column(., Order_f=rep(c(sapply(c(3:ncol(mean_imp)),
-                                     function(x){
-                                       return(which(round(mean_imp[1,x]%>%pull(.),5) ==
-                                                      round(sort(as.numeric(mean_imp[1,c(3:ncol(mean_imp))]),
-                                                                 decreasing = T),5)))})),
-                            each=(length(unique(d_all$Stat))+1)))%>%
-  mutate(variable = fct_reorder(variable, Order_f))
-
-n_var=length(unique(d_prep$variable))
-n_metric=length(unique(d_prep$Stat))
-
-p=ggplot(d_prep)+
-  geom_tile(aes(x=variable,y=Stat,fill=value))+
-  # geom_text(data=tibble(x=n_var,y=1:(n_metric-1),label=(round(unique(d_prep$R2m)[-1],2))),
-  #           aes(x=x,y=y,label=paste0(label)),size=3)+
-  geom_text(data=tibble(x=1:(n_var),y=(n_metric),
-                        label=round(sort(as.numeric(mean_imp)[-c(1,2)],decreasing = T),2)),
-            aes(x=x,y=y,label=paste0(label)),size=3)+
-  scale_fill_gradientn(colours = colorRampPalette(c("white","grey","grey30"))(100))+
-  the_theme+
-  theme(axis.text.x = element_text(angle=60,hjust=1))+
-  labs(x="Predictors",y="Spatial statistic",fill="Frequency in \n best models")
-
-ggsave("../Figures/SI/Importance_grazing_other_variables_without_cover.pdf",
-       p,width = 6,height = 5)
-
-
 ## >> Spatial resolution: correlation, AIC and partial residuals ----
 
 #Correlation spatial resolution and spatial metrics
@@ -852,7 +908,7 @@ p=ggplot(d_data%>%melt(., measure.vars=c("PL_expo","fmax_psd","flow_length",
 ggsave("../Figures/SI/Correlation_metrics_Resolution.pdf",p,width = 9,height = 5)
 
 
-d_slope=read.table("../Data/Linear_models_resolution/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
+d_slope=read.table("../Data/Linear_models_resolution/Slope_partial_residuals_aridity.csv",sep=";")%>%
   dplyr::filter(., With_cover==0,Driver=="Grazing",Grazing_intensity=="all")%>%
   Filter_relevant_stats(.)%>%  
   Rename_spatial_statistics(.)%>%
@@ -944,7 +1000,7 @@ ggsave("../Figures/SI/Correlation_metrics_cover.pdf",
 
 ## >> Partial residuals without accounting for vegetation cover ----
 
-d_slope=read.table("../Data/Linear_models_factor/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
+d_slope=read.table("../Data/Linear_models_factor/Slope_partial_residuals_aridity.csv",sep=";")%>%
   dplyr::filter(., With_cover==0,Driver=="Grazing",Grazing_intensity=="all")%>%
   Filter_relevant_stats(.)%>%
   Rename_spatial_statistics(.)%>%
@@ -995,109 +1051,6 @@ p=ggplot(d_slope)+
   theme(legend.position="bottom")#c(.2,.65))
 
 ggsave("../Figures/SI/Grazing_intensity_partial_residuals_without_cover.pdf",p,width = 5,height = 5.5)
-
-
-
-## >> Aridity vs grazing spatial structure ----
-
-d_slope=read.table("../Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
-  dplyr::filter(., With_cover==0,Grazing_intensity=="binary")%>%
-  Filter_relevant_stats(.)%>%  
-  Rename_spatial_statistics(.)%>%
-  mutate(., ID_grazing=as.character(ID_grazing))%>%
-  arrange(., q2)%>%
-  add_column(., Order_f=1:nrow(.))%>%
-  mutate(.,Stat = fct_reorder(Stat, Order_f))%>%
-  add_column(., Signif=.$pval<.05)%>%
-  arrange(., Stat,q2)%>%
-  add_column(., Type_stat=sapply(1:nrow(.),function(x){
-    if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
-                         "Mean patch size","Number of smallest patches")){
-      return("Patch-size")
-    }else if (.$Stat[x] =="Bare soil connectivity"){
-      return("Hydro.")
-    }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
-      return("Autocorr.")
-    }else{
-      return("Geom.")
-    }
-  }))
-
-p=ggplot(d_slope)+
-  geom_vline(xintercept = 0,linetype=9)+
-  
-  geom_linerange(aes(x=q2,y=Stat,xmin=q1_90,xmax=q3_90,color=as.factor(Driver)),
-                 lwd=2,position=position_jitterdodge(seed=123))+   
-  geom_linerange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,color=as.factor(Driver)),
-                 lwd=.8,position=position_jitterdodge(seed=123))+  
-  geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(Driver)),color="transparent",
-                  size=.3,position=position_jitterdodge(seed=123),shape=21)+  
-  
-  the_theme2+
-  scale_color_manual(values=c("orange","grey50"))+
-  scale_fill_manual(values=c("grey20","grey20","grey20"))+
-  scale_shape_manual(values=c(21,16))+
-  labs(x=substitute(paste(beta," (partial res. Grazing)")),y="",color="")+
-  guides(shape="none",fill="none")+
-  facet_grid(Type_stat ~ ., space = "free_y", 
-             scale = "free_y")+
-  theme(panel.background = element_rect(fill="white"),
-        legend.text = element_text(size=8))+
-  guides(color=guide_legend(ncol=1))+
-  theme(legend.position="bottom")#c(.2,.65))
-
-ggsave("../Figures/SI/Grazing_intensity_partial_residuals_aridity_grazing.pdf",p,width = 5,height = 5)
-
-
-
-
-d_slope=read.table("../Data/Linear_models_factor/Slope_partial_residuals_aridity_no_inter.csv",sep=";")%>%
-  dplyr::filter(., With_cover==0,Grazing_intensity=="binary")%>%
-  Filter_relevant_stats(.)%>%  
-  Rename_spatial_statistics(.)%>%
-  mutate(., ID_grazing=as.character(ID_grazing))%>%
-  arrange(., q2)%>%
-  add_column(., Order_f=1:nrow(.))%>%
-  mutate(.,Stat = fct_reorder(Stat, Order_f))%>%
-  add_column(., Signif=.$pval<.05)%>%
-  arrange(., Stat,q2)%>%
-  add_column(., Type_stat=sapply(1:nrow(.),function(x){
-    if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
-                         "Mean patch size","Number of smallest patches")){
-      return("Patch-size")
-    }else if (.$Stat[x] =="Bare soil connectivity"){
-      return("Hydro.")
-    }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
-      return("Autocorr.")
-    }else{
-      return("Geom.")
-    }
-  }))
-
-p=ggplot(d_slope)+
-  geom_vline(xintercept = 0,linetype=9)+
-  
-  geom_linerange(aes(x=q2,y=Stat,xmin=q1_90,xmax=q3_90,color=as.factor(Driver)),
-                 lwd=2,position=position_jitterdodge(seed=123))+   
-  geom_linerange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,color=as.factor(Driver)),
-                 lwd=.8,position=position_jitterdodge(seed=123))+  
-  geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(Driver)),color="transparent",
-                  size=.3,position=position_jitterdodge(seed=123),shape=21)+  
-  
-  the_theme2+
-  scale_color_manual(values=c("orange","grey50"))+
-  scale_fill_manual(values=c("grey20","grey20","grey20"))+
-  scale_shape_manual(values=c(21,16))+
-  labs(x=substitute(paste(beta," (partial res. Grazing)")),y="",color="")+
-  guides(shape="none",fill="none")+
-  facet_grid(Type_stat ~ ., space = "free_y", 
-             scale = "free_y")+
-  theme(panel.background = element_rect(fill="white"),
-        legend.text = element_text(size=8))+
-  guides(color=guide_legend(ncol=1))+
-  theme(legend.position="bottom")#c(.2,.65))
-
-ggsave("../Figures/SI/Grazing_intensity_partial_residuals_aridity_grazing_no_control_cover.pdf",p,width = 5,height = 5)
 
 
 
@@ -1220,78 +1173,159 @@ for (k in c("PL_expo","fmax_psd",
 }
 
 p_fig=ggarrange(p_tot_1,
-                p_tot_7,
                 p_tot_5,
                 p_tot_2,
                 p_tot_3,
                 p_tot_4,
                 p_tot_6,
+                p_tot_7,
                 nrow=7,align = "hv",
                 labels=letters[1:7])
 
 ggsave("../Figures/SI/Interactive_effects.pdf",p_fig,width = 9,height = 14)
 
-## >> Correlation between traits (pair plot and PCA) ----
 
-d_traits_norm=d_traits%>%
-  Closer_to_normality_traits(.)
-corr_pred=corr.test(d_traits_norm[,7:(ncol(d_traits_norm)-1)],use = "na.or.complete",adjust = "none")
-corr_pred$r=round(corr_pred$r,2)
-corr_pred$r[lower.tri(corr_pred$r)]=NA
-diag(corr_pred$r)=NA
-p=ggplot(corr_pred$r%>%
-           melt(.)%>%
-           add_column(., pval=sapply(1:nrow(.), function(x){
-             if (is.na(.$value[x])){
-               return(NA)
-             }else{return(melt(corr_pred$p)$value[x])}
-           })))+
-  geom_tile(aes(x=Var1,Var2,fill=value))+
-  the_theme+
-  geom_text(aes(x=Var1,Var2,label=ifelse(pval<.1,"","X")))+
-  scale_fill_gradient2(low="red",mid="white",high = "blue",midpoint = 0,na.value = "white")+
-  theme(axis.text.x = element_text(angle=60,hjust=1))+
-  labs(x="",y="",fill="")
-ggsave("../Figures/SI/Correlation_between_traits.pdf",p,width = 6,height = 5)
+# 
+# 
+# d=tibble()
+# 
+# name_stats=c("Power-law exp. \n of the PSD","log (largest patch)",
+#              "Bare soil connectivity","Spatial autocorrelation \n of vege.",
+#              "Number of \n smallest patches",
+#              "Mean % of core \n pixels in patches",
+#              "Mean patch size")
+# 
+# color_grazing=c("grey","#FBD2A5","#FF8888","#C17F9D")
+# 
+# for (k in c("PL_expo","fmax_psd",
+#             "flow_length","moran_I","Small_patches",
+#             "core_area","mean_psd")){
+#   
+#   d_data_out=read.table(paste0("../Data/Linear_models_factor_cover_control/Keep_data/Data_",k,"_FALSE_aridity_all.csv"),sep=" ")
+#   
+#   model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_cover_control/Keep_models/Mod_",k,"_FALSE_aridity_all.rds"))
+#   
+#   d_data_out$Grazing = as.factor(d_data_out$Grazing)
+#   d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "0")
+#   
+#   partial_res=visreg::visreg(fit = model_spa_stat,xvar="Aridity",by="Grazing",plot=F)
+#   
+#   for (grazing_id in unique(partial_res$res$Grazing)){
+#     summary_lm=(lm(data = dplyr::filter(partial_res$res,Grazing==grazing_id),visregRes~Aridity))
+#     
+#     d=rbind(d,tibble(Stat=k,
+#                      q1=confint(summary_lm,level = .95)[2,1],
+#                      q3=confint(summary_lm,level = .95)[2,2],
+#                      q2=confint(summary_lm,level = 0)[2,2],
+#                      q3_90=confint(summary_lm,level = .9)[2,2],
+#                      q1_90=confint(summary_lm,level = .9)[2,1],
+#                      ID_grazing=grazing_id))
+#     
+#     
+#   }
+# }
+# 
+# 
+# ggplot(d%>%Rename_spatial_statistics(.)%>%
+#          add_column(., Type_stat=sapply(1:nrow(.),function(x){
+#            if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
+#                                 "Mean patch size","Number of smallest patches")){
+#              return("Patch-size")
+#            }else if (.$Stat[x] =="Bare soil connectivity"){
+#              return("Hydro.")
+#            }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
+#              return("Autocor.")
+#            }else{
+#              return("Geom.")
+#            }
+#          })))+
+#   geom_vline(xintercept = 0,linetype=9)+
+#   
+#   geom_linerange(aes(x=q2,y=Stat,xmin=q1_90,xmax=q3_90,color=as.factor(ID_grazing)),
+#                  lwd=1.5,position=position_jitterdodge(seed=123))+   
+#   geom_linerange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,color=as.factor(ID_grazing)),
+#                  lwd=.5,position=position_jitterdodge(seed=123))+  
+#   geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(ID_grazing)),color="transparent",
+#                   size=.15,position=position_jitterdodge(seed=123),shape=21)+  
+#   
+#   the_theme2+
+#   scale_color_manual(values=c("grey","#FBD2A5","#FF8888","#C17F9D"),
+#                      labels=c("Ungrazed","Low grazing","Medium grazing","High grazing"))+
+#   scale_fill_manual(values=c("grey20","grey20","grey20","grey20"))+
+#   scale_shape_manual(values=c(21,16))+
+#   labs(x=substitute(paste(beta," (partial residuals)")),y="",color="")+
+#   guides(shape="none",fill="none")+
+#   facet_grid(Type_stat ~ ., space = "free_y", 
+#              scale = "free_y")+
+#   theme(panel.background = element_rect(fill="white"),
+#         legend.text = element_text(size=8))+
+#   guides(color=guide_legend(ncol=4))+
+#   theme(legend.position="bottom")
 
+## >> Interaction herbivores and grazing ----
 
+d=tibble()
 
-
-d_traits_norm=d_traits%>%Closer_to_normality_traits(.)
-
-struct_variables=colnames(d_traits_norm)[7:(ncol(d_traits_norm)-1)]
-res.comp=imputePCA(d_traits_norm[,which(colnames(d_traits_norm) %in% struct_variables)],ncp=4,scale = T) 
-
-if ("completeObs" %in% names(res.comp)){
-  res.pca=PCA(res.comp$completeObs, ncp = 4,  graph=F)
-}else {
-  res.pca=PCA(res.comp, ncp = 4,  graph=F)
+for (k in c("PL_expo","fmax_psd",
+            "flow_length","moran_I","Small_patches",
+            "core_area","mean_psd")){
+  
+  d_data_out=read.table(paste0("../Data/Linear_models_factor_cover_control/Keep_data/Data_",k,"_FALSE_aridity_all.csv"),sep=" ")
+  
+  model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_cover_control/Keep_models/Mod_",k,"_FALSE_aridity_all.rds"))
+  
+  d_data_out$Grazing = as.factor(d_data_out$Grazing)
+  d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "0")
+  
+  partial_res=visreg::visreg(fit = model_spa_stat,xvar="Grazing",by="Herbivores",plot=F)
+  partial_res2=visreg::visreg(fit = model_spa_stat,xvar="Grazing",by="Herbivores",plot=F,alpha = .1)
+  
+  d=rbind(d,tibble(Stat=k,
+                   q1=partial_res$fit$visregLwr,
+                   q3=partial_res$fit$visregUpr,
+                   q2=partial_res$fit$visregFit,
+                   q1_90=partial_res2$fit$visregLwr,
+                   q3_90=partial_res2$fit$visregUpr,
+                   Grazing_id=partial_res$fit$Grazing,
+                   Herbivores_id=partial_res$fit$Herbivores))
+  
 }
 
-p1=factoextra::fviz_pca_var(res.pca,col.var="#2746B1")+
-  the_theme+
-  ggtitle("")+
-  labs(x=paste0("PC 1 (",round(res.pca$eig[1,2],1),")"),
-       y=paste0("PC 2 (",round(res.pca$eig[2,2],1),")"))
 
-p2=factoextra::fviz_pca_var(res.pca,col.var="#2746B1",axes = c(1,3))+
-  the_theme+
-  ggtitle("")+
-  labs(x=paste0("PC 1 (",round(res.pca$eig[1,2],1),")"),
-       y=paste0("PC 3 (",round(res.pca$eig[3,2],1),")"))
-
-p3=factoextra::fviz_pca_var(res.pca,col.var="#2746B1",axes = c(2,3))+
-  the_theme+
-  ggtitle("")+
-  labs(x=paste0("PC 2 (",round(res.pca$eig[2,2],1),")"),
-       y=paste0("PC 3 (",round(res.pca$eig[3,2],1),")"))
-
-
-ggsave("../Figures/SI/PCA_on_traits.pdf",ggarrange(p1,p2,p3,ncol=3,labels = letters[1:3]),width = 12,height = 5)
+p=ggplot(d%>%Rename_spatial_statistics(.)%>%
+           add_column(., Type_stat=sapply(1:nrow(.),function(x){
+             if (.$Stat[x] %in% c("Power-law exp. of the PSD","log (largest patch)",
+                                  "Mean patch size","Number of smallest patches")){
+               return("Patch-size")
+             }else if (.$Stat[x] =="Bare soil connectivity"){
+               return("Hydro.")
+             }else if (.$Stat[x] =="Spatial autocorrelation of vege."){
+               return("Autocor.")
+             }else{
+               return("Geom.")
+             }
+           })))+
+  geom_vline(xintercept = 0,linetype=9)+
+  
+  # geom_linerange(aes(y=q2,x=Grazing_id,ymin=q1_90,ymax=q3_90,color=as.factor(Herbivores_id)),
+  #                lwd=1.5,position=position_jitterdodge(seed=123))+   
+  geom_line(aes(y=q2,x=Grazing_id,color=as.factor(Herbivores_id),group=interaction(Stat,Herbivores_id)))+
+  geom_pointrange(aes(y=q2,x=Grazing_id,ymin=q1,ymax=q3,fill=as.factor(Herbivores_id),color=as.factor(Herbivores_id)),
+                  position=position_jitterdodge(seed=123))+  
+  the_theme2+
+  scale_fill_manual(values=c("grey20","grey20","grey20","grey20"))+
+  scale_shape_manual(values=c(21,16))+
+  labs(x=substitute(paste(beta," (partial residuals, relative to cattle)")),y="",color="")+
+  guides(shape="none",fill="none")+
+  geom_hline(yintercept = 0)+
+  theme(panel.background = element_rect(fill="white"),
+        legend.text = element_text(size=8))+
+  guides(color=guide_legend(ncol=4))+
+  scale_color_manual(values=c("lightgreen","orange","violet","lightblue"))+
+  facet_wrap(. ~ Stat, scales = "free")
 
 
 ## >> Boxplot variables and grazing ----
-
 
 save_data=read.table("../Data/Spatial_structure_with_traits.csv",sep=";")
 
@@ -1545,200 +1579,26 @@ pdf("../Figures/SI/EXploration_grazing_effects_mecanisms.pdf.",width = 5,height 
 dev.off()
 ## >> Basic plots traits ----
 
-d_data=Perform_PCA_spatial_struc(Closer_to_normality_CWM(read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";"))%>%
-                                   mutate(., Grazing=recode_factor(Grazing,"0"="Ungrazed","1"="Low","2"="Medium","3"="High")),plot = F)
+d_biodesert_traits=read.table("../Data/Biodesert_all_sites_traits.csv",sep=";",quote = "")
+colnames(d_biodesert_traits)=gsub("X.","",colnames(d_biodesert_traits))
 
-p11=ggplot(d_data)+
-  geom_point(aes(x=Woody,y=mean_psd),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=Woody,y=mean_psd),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="% of Woody",y="Mean patch size")
-
-p12=ggplot(d_data)+
-  geom_point(aes(x=Woody,y=moran_I),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=Woody,y=moran_I),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="% of Woody",y="Spatial autocorrelation of vege.")
-
-p13=ggplot(d_data)+
-  geom_point(aes(x=Woody,y=PL_expo),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=Woody,y=PL_expo),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="% of Woody",y="Power−law exp. of the PSD")
-
-p14=ggplot(d_data)+
-  geom_point(aes(x=Woody,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=Woody,y=flow_length),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="% of Woody",y="Bare soil connectivity")
-
-
-p21=ggplot(d_data)+
-  geom_point(aes(x=CWM_MaxLS,y=mean_psd),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=mean_psd),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="CWM Lateral spread",y="Mean patch size")
-
-p22=ggplot(d_data)+
-  geom_point(aes(x=CWM_MaxLS,y=moran_I),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=moran_I),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="CWM Lateral spread",y="Spatial autocorrelation of vege.")
-
-p23=ggplot(d_data)+
-  geom_point(aes(x=CWM_MaxLS,y=PL_expo),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=PL_expo),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="CWM Lateral spread",y="Power−law exp. of the PSD")
-
-p24=ggplot(d_data)+
-  geom_point(aes(x=CWM_MaxLS,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=flow_length),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="CWM Lateral spread",y="Bare soil connectivity")
-
-p31=ggplot(d_data)+
-  geom_point(aes(x=-Dev_MaxLS,y=mean_psd),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=-Dev_MaxLS,y=mean_psd),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="Trait aggregation: lateral spread",y="Mean patch size")
-
-p32=ggplot(d_data)+
-  geom_point(aes(x=-Dev_MaxLS,y=moran_I),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=-Dev_MaxLS,y=moran_I),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="Trait aggregation: lateral spread",y="Spatial autocorrelation of vege.")
-
-p33=ggplot(d_data)+
-  geom_point(aes(x=-Dev_MaxLS,y=PL_expo),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=-Dev_MaxLS,y=PL_expo),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="Trait aggregation: lateral spread",y="Power−law exp. of the PSD")
-
-p34=ggplot(d_data)+
-  geom_point(aes(x=-Dev_MaxLS,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=-Dev_MaxLS,y=flow_length),fill="lightblue",color="black",method = "lm")+
-  the_theme2+
-  labs(x="Trait aggregation: lateral spread",y="Bare soil connectivity")
-
-
-d=readxl::read_xlsx("../Data/Final_biodesert.xlsx")[,-c(112:319)]%>%
-  add_column(.,
-             Dev_LL=NA,Dev_SLA=NA,Dev_LDMC=NA,Dev_LA=NA,Dev_MaxH=NA,
-             Dev_MaxLS=NA,Dev_Maxvol=NA,Dev_Phenol=NA,Dev_LNC=NA,Dev_LCC=NA,Dev_PC1=NA,
-             Dev_PC2=NA,Dev_PC3=NA,Dev_PC4=NA,
-             # DEv_Woody=NA,DEv_Grass_woody=NA,DEv_Grass_herb=NA,DEv_Gerb_woody=NA,DEv_Grass=NA,DEv_Herb=NA,
-             CWM_LL=NA,CWM_SLA=NA,CWM_LDMC=NA,CWM_LA=NA,CWM_MaxH=NA,
-             CWM_MaxLS=NA,CWM_Maxvol=NA,CWM_Phenol=NA,CWM_LNC=NA,CWM_LCC=NA,CWM_PC1=NA,
-             CWM_PC2=NA,CWM_PC3=NA,CWM_PC4=NA)%>%
-  dplyr::rename(., 
-                "Grazing"="GRAZ",
-                "Slope"=`SLOPE-ALOS30`,
-                "Elevation"=`ELE-ALOS30`,
-                "Lattitude"="Lat_decimal",
-                "Longitude"="Long_decimal",
-                "Aridity"="ARIDITY",
-                "Site_ID"="SITE_ID",
-                "MAT"="AMT",
-                "MAP"="RAI",
-                "Herb"="RHCQ",
-                "Woody"="RWCQ",
-                "Grass"="RGCQ",
-                "Species_richness"="SR",
-                "Evenness_quadrat"="SEQ")%>%
-  add_column(., 
-             Long_cos=cos(.$Longitude),
-             Long_sin=sin(.$Longitude)
-  )
-
-d_pwd=read.table("../Data/Traits/Pwd_all_sites.csv",sep=";")%>%
-  add_column(., 
-             Site_ID=sapply(1:nrow(.),function(x){
-               return(d_biodesert$SITE_ID[which(d_biodesert$ID==.$ID[x])])
-             }),
-             Deviation=.$PwD_obs-.$mean_PwD_random
-  )
-
-
-d_CWT_FD=read.table("../Data/Traits/CWM_FD_sites.csv",sep=";")
-
-traits=grep("Dev",colnames(d))
-all_traits_name=unique(d_pwd$variable)
-
-#Adding the deviation of each trait to the global dataset 
-d[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d),function(y){
-          if (d$ID[y] %in% unique(d_pwd$ID)){
-            return(d_pwd$Deviation[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d)[x]),all_traits_name)] &
-                                           d_pwd$ID==d$ID[y] & d_pwd$Graz==d$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d),length(traits)))
-
-
-#Community traits weighted by abundance
-traits=grep("CWM_",colnames(d)) 
-all_traits_name=unique(d_CWT_FD$variable)
-
-#Adding community weighted means to  to the global dataset 
-d[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d),function(y){
-          if (d$ID[y] %in% unique(d_CWT_FD$ID)){
-            return(d_CWT_FD$CWM[which(d_CWT_FD$variable==all_traits_name[grep(gsub("CWM_","",colnames(d)[x]),all_traits_name)] &
-                                        d_CWT_FD$ID==d$ID[y] & d_CWT_FD$Graz==d$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d),length(traits)))
-
-#normality assumptions
-
-d_biodesert_traits=d%>%mutate(., 
-             CWM_LA=log(CWM_LA),
-             CWM_LL=log(CWM_LL+1),
-             CWM_MaxH=log(CWM_MaxH+1),
-             CWM_MaxLS=log(CWM_MaxLS+1),
-             CWM_Maxvol=log(CWM_Maxvol),
-             Slope=log(Slope+1))
-
-
-p4=ggplot(d_biodesert_traits)+
-  geom_point(aes(x=CWM_MaxLS,y=Woody),shape=21,size=2,fill="lightblue",color="black")+
-  geom_smooth(aes(x=CWM_MaxLS,y=Woody),fill="lightblue",color="black",method = "lm")+
+p=ggplot(d_biodesert_traits)+
+  geom_point(aes(x=CWM_MaxLS.,y=Woody.),shape=21,size=2,fill="lightblue",color="black")+
+  geom_smooth(aes(x=CWM_MaxLS.,y=Woody.),fill="lightblue",color="black",method = "lm")+
   the_theme2+
   labs(x="CWM Lateral spread",y="% of Woody")+
   ylim(0,1)
 
-p=ggarrange(
-  ggarrange(ggplot()+theme_void(),p4,ggplot()+theme_void(),ncol=3,labels=letters[1],widths = c(1,1.5,1)),
-  ggarrange(p11,p12,p13,ncol=3,labels=letters[2:4]),
-  ggarrange(p21,p22,p23,ncol=3,labels=letters[5:7]),
-  ggarrange(p31,p32,p33,ncol=3,labels=letters[8:10]),
-  nrow=4
-)
 
-ggsave("../Figures/SI/Woody_MaxLS_spatial_structure.pdf",p,width = 12,height = 12)
+ggsave("../Figures/SI/Woody_MaxLS_spatial_structure.pdf",p,width = 5,height = 4)
 
 
 ## >> Shrubland woody connectivity
+d_data=Perform_PCA_spatial_struc(Closer_to_normality_CWM(read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";"))%>%
+                                   mutate(., Grazing=recode_factor(Grazing,"0"="Ungrazed","1"="Low","2"="Medium","3"="High")),plot = F)
 
 p1=ggplot(d_biodesert_traits)+
-  geom_boxplot(aes(VEG,Woody))+
+  geom_boxplot(aes(VEG.,Woody.))+
   the_theme2+
   labs(x="Type of vegetation",y="% of Woody")+
   scale_x_discrete(labels=c("Grassland","Open woodlands \n with shrubs",
@@ -1750,6 +1610,26 @@ p2=ggplot(d_data)+
   labs(x="Type of vegetation",y="Bare soil connectivity")+
   scale_x_discrete(labels=c("Forest","Open woodlands \n with shrubs","Grassland",
                             "Shrubland"))
+
+
+p14=ggplot(d_data)+
+  geom_point(aes(x=Woody,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
+  geom_smooth(aes(x=Woody,y=flow_length),fill="lightblue",color="black",method = "lm")+
+  the_theme2+
+  labs(x="% of Woody",y="Bare soil connectivity")
+
+p24=ggplot(d_data)+
+  geom_point(aes(x=CWM_MaxLS,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
+  geom_smooth(aes(x=CWM_MaxLS,y=flow_length),fill="lightblue",color="black",method = "lm")+
+  the_theme2+
+  labs(x="CWM Lateral spread",y="Bare soil connectivity")
+
+
+p34=ggplot(d_data)+
+  geom_point(aes(x=-Dev_MaxLS,y=flow_length),shape=21,size=2,fill="lightblue",color="black")+
+  geom_smooth(aes(x=-Dev_MaxLS,y=flow_length),fill="lightblue",color="black",method = "lm")+
+  the_theme2+
+  labs(x="Trait aggregation: lateral spread",y="Bare soil connectivity")
 
 p3=ggarrange(p14,p24,p34,ncol=3,labels = letters[2:4])
 
@@ -1767,16 +1647,16 @@ ggsave("../Figures/SI/Type_vegetation.pdf",ggarrange(ggarrange(p1+theme(axis.tex
 
 
 p1=ggplot(d_biodesert_traits%>%
-            mutate(., Dev_MaxLS=-Dev_MaxLS)%>%
-            melt(., measure.vars = c("Woody","CWM_MaxLS","Dev_MaxLS"))%>%
+            mutate(., Dev_MaxLS.=-Dev_MaxLS.)%>%
+            melt(., measure.vars = c("Woody.","CWM_MaxLS.","Dev_MaxLS."))%>%
             mutate(., variable=recode_factor(variable,
-                                             "Woody"="% of Woody",
-                                             "Dev_MaxLS"="Trait spatial aggregation: \n Lateral spread",
+                                             "Woody."="% of Woody",
+                                             "Dev_MaxLS."="Trait spatial aggregation: \n Lateral spread",
                                              #"Dev_LDMC"="Dev. LDMC from rand. expec.",
                                              #"Dev_Phenol"="Dev. Phenolics from rand. expec.",
-                                             "CWM_MaxLS"="CWM Lateral spread")))+
-  geom_boxplot(aes(x=Grazing,y=value,group=as.factor(Grazing)),outlier.shape = NA)+
-  geom_jitter(aes(x=Grazing,y=value,color=as.factor(Grazing)),size=.5,alpha=.5)+
+                                             "CWM_MaxLS."="CWM Lateral spread")))+
+  geom_boxplot(aes(x=Grazing.,y=value,group=as.factor(Grazing.)),outlier.shape = NA)+
+  geom_jitter(aes(x=Grazing.,y=value,color=as.factor(Grazing.)),size=.5,alpha=.5)+
   scale_color_manual(values=c("grey","#FBD2A5","#FF8888","#C17F9D"))+
   facet_wrap(.~variable,scales = "free",ncol = 5)+
   the_theme2+
@@ -1784,15 +1664,15 @@ p1=ggplot(d_biodesert_traits%>%
   theme(legend.position = "none")
 
 p2=ggplot(d_biodesert_traits%>%
-            mutate(., Dev_MaxLS=-Dev_MaxLS)%>%
-            melt(., measure.vars = c("Woody","CWM_MaxLS","Dev_MaxLS"))%>%
+            mutate(., Dev_MaxLS.=-Dev_MaxLS.)%>%
+            melt(., measure.vars = c("Woody.","CWM_MaxLS.","Dev_MaxLS."))%>%
             mutate(., variable=recode_factor(variable,
-                                             "Woody"="% of Woody",
-                                             "Dev_MaxLS"="Trait spatial aggregation: \n Lateral spread",
+                                             "Woody."="% of Woody",
+                                             "Dev_MaxLS."="Trait spatial aggregation: \n Lateral spread",
                                              #"Dev_LDMC"="Dev. LDMC from rand. expec.",
                                              #"Dev_Phenol"="Dev. Phenolics from rand. expec.",
-                                             "CWM_MaxLS"="CWM Lateral spread")))+
-  geom_point(aes(x=Aridity,y=value),size=1,alpha=.5,color="grey")+
+                                             "CWM_MaxLS."="CWM Lateral spread")))+
+  geom_point(aes(x=Aridity.,y=value),size=1,alpha=.5,color="grey")+
   facet_wrap(.~variable,scales = "free",ncol = 5)+
   the_theme2+
   labs(x="Aridity level",y="")+

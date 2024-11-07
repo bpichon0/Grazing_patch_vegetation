@@ -299,21 +299,6 @@ d$MF_all=sapply(1:nrow(d),function(x){
 write.table(d,"../Data/Spatial_structure_grazing.csv",sep=";")
 
 
-# Changing the spatial statistics to control for vegetation cover
-
-d=Closer_to_normality(read.table("../Data/Spatial_structure_grazing.csv",sep=";"))
-
-for (x in c(2:31)){
-  d_lm=melt(d,measure.vars=colnames(d)[x])
-  d_lm[,c("rho_p","value")]=apply(d_lm[,c("rho_p","value")],2,scale)
-  reg_cover=lm(value~rho_p,d_lm)
-  d[as.numeric(names(residuals(reg_cover))),colnames(d)[x]]=residuals(reg_cover)
-}
-
-write.table(d,"../Data/Spatial_structure_grazing_control_cover.csv",sep=";")
-
-
-
 
 # ---------------------- Step 2: Effects of grazing on the spatial structure  ----
 ## >> 1) Running mixed-effect models ---- 
@@ -327,7 +312,6 @@ Run_model_importance_aridity=function(id){
                  tibble(with_cover=F,
                         Stats=c("rho_p")))
   
-  d_all=d_all2=tibble()#for keeping all information
   
   d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
     Closer_to_normality(.)
@@ -340,14 +324,14 @@ Run_model_importance_aridity=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + Aridity*Grazing 
       + rho_p + Type_veg 
       + Sand + Org_C_v 
@@ -356,7 +340,7 @@ Run_model_importance_aridity=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + Aridity*Grazing 
       + Type_veg 
       + Sand + Org_C_v 
@@ -394,81 +378,15 @@ Run_model_importance_aridity=function(id){
     
     model_spa_stat = lmer(formula_mod, data = d_data_out, 
                           na.action = na.fail,REML ="FALSE")
-    
-    # #do some model selection
-    select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                          Long_cos & Long_sin & Lattitude &
-                          dc(Aridity & Grazing, Aridity : Grazing) &
-                          dc(Org_C_v & Grazing, Org_C_v : Grazing),
-                        extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                                R2c=function(x) r.squaredGLMM(x)[2]),
-                        options(na.action = "na.fail"))
-    
-    #extract the result of model selection
-    if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-      
-      result_select=model_spa_stat
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      importance_mod=tibble(Interactions=1,
-                            Sand =1,
-                            Aridity=1,
-                            Org_C=1,
-                            Type_veg=1,
-                            Grazing=1,
-                            Cover=1,
-                            Woody=1)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              importance_mod))
-      
-      
-    }else{
-      
-      result_select=model.avg(select_model, subset = delta < 2)
-      
-      #Get the importance of each metric
-      importance_mod=sw(result_select)
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              Aggregate_importance(importance_mod,T)))
-      
-    }
+
     
     saveRDS(model_spa_stat,#MuMIn::get.models(select_model,subset = delta<2)[[1]],
             paste0("../Data/Linear_models_factor/Keep_models/Mod_",stat,"_",
                    with_cover,"_aridity_",grazing_intensity,".rds"))
     
-    summary_coef=confint(result_select)
-    
-    #Merge in a df
-    d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                               q1=summary_coef[-1,1], 
-                               q3=summary_coef[-1,2],
-                               term=rownames(summary_coef)[-1],
-                               Stat=stat,
-                               R2m=mean(R2$R2m),
-                               R2c=mean(R2$R2c),
-                               Grazing_intensity=grazing_intensity)%>%
-                   add_column(., With_cover=with_cover))
     
   }  
   
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor/Importance/Importance_",
-                           stat,"_",with_cover,"_aridity_",grazing_intensity,".csv"),sep=";")
-  
-  write.table(d_all2,paste0("../Data/Linear_models_factor/Estimator/Estimators_model_",stat
-                            ,"_",with_cover,"_aridity_",grazing_intensity,".csv"),sep=";")
   
 }
 
@@ -476,24 +394,8 @@ library(parallel)
 
 mclapply(1:19,Run_model_importance_aridity,mc.cores = 19)
 
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor/Importance",paste0("aridity.csv"))){
-  d=read.table(paste0("../Data/Linear_models_factor/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor/Estimator",paste0("aridity.csv"))){
-  d2=read.table(paste0("../Data/Linear_models_factor/Estimator/",k),sep=";")
-  if (nrow(d2)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor/Importance_aridity_factor.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor/Estimators_model_aridity_factor.csv"),sep=";")
 
-
-Run_model_importance_aridity_no_inter=function(id){
+Run_model_importance_herbivores=function(id){
   
   list_mod=rbind(expand.grid(with_cover=c(T,F),
                              Stats=c("perim_area_scaling","fmax_psd","PL_expo",
@@ -516,14 +418,14 @@ Run_model_importance_aridity_no_inter=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + rho_p + Type_veg 
       + Sand + Org_C_v 
       + (1|Site_ID)")))
@@ -531,7 +433,7 @@ Run_model_importance_aridity_no_inter=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + Type_veg
       + Sand + Org_C_v 
       + (1|Site_ID)")))
@@ -568,104 +470,18 @@ Run_model_importance_aridity_no_inter=function(id){
     model_spa_stat = lmer(formula_mod, data = d_data_out, 
                           na.action = na.fail,REML ="FALSE")
     
-    # #do some model selection
-    select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                          Long_cos & Long_sin & Lattitude &
-                          dc(Woody & Grazing, Woody : Grazing) &
-                          dc(Aridity & Grazing, Aridity : Grazing) &
-                          dc(rho_p & Grazing, rho_p : Grazing) &
-                          dc(Org_C_v & Grazing, Org_C_v : Grazing) &
-                          dc(Sand  & Grazing, Sand  : Grazing) &
-                          dc(Type_veg & Grazing, Type_veg : Grazing),
-                        extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                                R2c=function(x) r.squaredGLMM(x)[2]),
-                        options(na.action = "na.fail") )
-    
-    if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-      
-      result_select=model_spa_stat
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      importance_mod=tibble(Interactions=1,
-                            Sand =1,
-                            Aridity=1,
-                            Org_C=1,
-                            Type_veg=1,
-                            Grazing=1,
-                            Cover=1,
-                            Woody=1)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              importance_mod))
-      
-    }else{
-      
-      result_select=model.avg(select_model, subset = delta < 2)
-      
-      #Get the importance of each metric
-      importance_mod=sw(result_select)
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c)),
-                              Aggregate_importance(importance_mod,T))%>%
-                    add_column(., With_cover=with_cover,
-                               Grazing_intensity=grazing_intensity))
-      
-    }
-    
     saveRDS(model_spa_stat,#MuMIn::get.models(select_model,subset = delta<2)[[1]],
             paste0("../Data/Linear_models_factor/Keep_models/Mod_",stat,
                    "_",with_cover,"_aridity_no_inter_",grazing_intensity,".rds"))
     
-    summary_coef=confint(result_select)
-    
-    
-    #Merge in a df
-    d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                               q1=summary_coef[-1,1], 
-                               q3=summary_coef[-1,2],
-                               # pvalue=summary(result_select)$coefmat.full[-1,5],
-                               term=rownames(summary_coef)[-1],
-                               Stat=stat,
-                               R2m=mean(R2$R2m),
-                               R2c=mean(R2$R2c),
-                               Grazing_intensity=grazing_intensity)%>%
-                   add_column(., With_cover=with_cover))
     
   }
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor/Importance/Importance_",
-                           stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"),sep=";")
-  write.table(d_all2,paste0("../Data/Linear_models_factor/Estimator/Estimators_model_",
-                            stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"),sep=";")
   
 }
 
 library(parallel)
 
 mclapply(1:19,Run_model_importance_aridity_no_inter,mc.cores = 19)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor/Importance",paste0("aridity_no_inter"))){
-  d=read.table(paste0("../Data/Linear_models_factor/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor/Estimator",paste0("aridity_no_inter"))){
-  d2=read.table(paste0("../Data/Linear_models_factor/Estimator/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor/Importance_aridity_no_inter_factor.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor/Estimators_model_aridity_no_inter_factor.csv"),sep=";")
-
 
 ## >> 2) Analyzing the residuals ---- 
 
@@ -703,70 +519,7 @@ for (with_interaction in c(T,F)){
                 "core_area_land","core_area","Small_patches",
                 "flow_length","mean_psd","moran_I","rho_p")){
       
-      #for each we plot the slope against the partial residuals with and without cover
-      
-      if (k !="rho_p"){
-        
-        d_data_out=read.table(paste0("../Data/Linear_models_factor/Keep_data/Data_",k,"_TRUE_aridity_",
-                                     ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-        model_spa_stat=readRDS(paste0("../Data/Linear_models_factor/Keep_models/Mod_",k,"_TRUE_aridity_",
-                                      ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-        
-        d_data_out$Grazing = as.factor(d_data_out$Grazing)
-        d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "0")
-        
-        resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-        
-        
-        if (grazing_intensity=="binary"){
-          mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz_binary, R=1000, formula=visregRes~Grazing)
-          
-          d_slope=rbind(d_slope,
-                        tibble(pval=twoside_pvalue(mod_cov$t),
-                               q2=median(mod_cov$t),
-                               q1=quantile(mod_cov$t,.025),
-                               q3=quantile(mod_cov$t,.975),
-                               q1_90=quantile(mod_cov$t,.05),
-                               q3_90=quantile(mod_cov$t,.95),
-                               With_cover=T,Grazing_intensity=grazing_intensity,
-                               ID_grazing=c("grazed"),
-                               Stat=k,Driver="Grazing"
-                        ))
-        } else{
-          mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-          
-          d_slope=rbind(d_slope,
-                        tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                               q2=apply((mod_cov$t),2,median),
-                               q1=apply(mod_cov$t,2,quantile,.025),
-                               q3=apply(mod_cov$t,2,quantile,.975),
-                               q1_90=apply(mod_cov$t,2,quantile,.05),
-                               q3_90=apply(mod_cov$t,2,quantile,.95),
-                               With_cover=T,Grazing_intensity=grazing_intensity,
-                               ID_grazing=c("1","2","3"),
-                               Stat=k,Driver="Grazing"
-                        ))
-        }
-        
-        resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-        
-        
-        mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-        
-        d_slope=rbind(d_slope,
-                      tibble(pval=twoside_pvalue(mod_cov$t),
-                             q2=median(mod_cov$t),
-                             q1=quantile(mod_cov$t,.025),
-                             q3=quantile(mod_cov$t,.975),
-                             q1_90=quantile(mod_cov$t,.05),
-                             q3_90=quantile(mod_cov$t,.95),
-                             With_cover=T,Grazing_intensity=grazing_intensity,
-                             ID_grazing=c("all"),
-                             Stat=k,Driver="Aridity"
-                      ))
-        
-        
-      }
+      #for each we plot the slope against the partial residuals
       
       d_data_out=read.table(paste0("../Data/Linear_models_factor/Keep_data/Data_",k,"_FALSE_aridity_",
                                    ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
@@ -830,6 +583,22 @@ for (with_interaction in c(T,F)){
       
       
       
+      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Herbivores",plot=F) 
+      
+      
+      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Herbivores)
+      
+      d_slope=rbind(d_slope,
+                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
+                           q2=apply((mod_cov$t),2,median),
+                           q1=apply(mod_cov$t,2,quantile,.025),
+                           q3=apply(mod_cov$t,2,quantile,.975),
+                           q1_90=apply(mod_cov$t,2,quantile,.05),
+                           q3_90=apply(mod_cov$t,2,quantile,.95),
+                           With_cover=F,Grazing_intensity=grazing_intensity,
+                           ID_grazing=c("Goat","Horse","Sheep"),
+                           Stat=k,Driver="Herbivores"
+                    ))
     }
   }
   
@@ -863,14 +632,14 @@ Run_model_importance_aridity=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    dplyr::filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing + Herbivores
       + Aridity*Grazing 
       + rho_p + Type_veg 
       + Sand + Org_C_v
@@ -879,7 +648,7 @@ Run_model_importance_aridity=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing + Herbivores
       + Aridity*Grazing 
       + Type_veg 
       + Sand + Org_C_v 
@@ -923,103 +692,19 @@ Run_model_importance_aridity=function(id){
     model_spa_stat = lmer(formula_mod, data = d_data_out, 
                           na.action = na.fail,REML ="FALSE")
     
-    # #do some model selection
-    select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                          Long_cos & Long_sin & Lattitude &
-                          dc(Aridity & Grazing, Aridity : Grazing) &
-                          dc(Org_C_v & Grazing, Org_C_v : Grazing),
-                        extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                                R2c=function(x) r.squaredGLMM(x)[2]),
-                        options(na.action = "na.fail"))
-    
-    #extract the result of model selection
-    if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-      
-      result_select=model_spa_stat
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      importance_mod=tibble(Interactions=1,
-                            Sand =1,
-                            Aridity=1,
-                            Org_C=1,
-                            Type_veg=1,
-                            Grazing=1,
-                            Cover=1,
-                            Woody=1)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              importance_mod))
-      
-      
-    }else{
-      
-      result_select=model.avg(select_model, subset = delta < 2)
-      
-      #Get the importance of each metric
-      importance_mod=sw(result_select)
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              Aggregate_importance(importance_mod,T)))
-      
-    }
     
     saveRDS(model_spa_stat,#MuMIn::get.models(select_model,subset = delta<2)[[1]],
             paste0("../Data/Linear_models_factor_cover_control/Keep_models/Mod_",stat,"_",
                    with_cover,"_aridity_",grazing_intensity,".rds"))
     
-    summary_coef=confint(result_select)
-    
-    #Merge in a df
-    d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                               q1=summary_coef[-1,1], 
-                               q3=summary_coef[-1,2],
-                               term=rownames(summary_coef)[-1],
-                               Stat=stat,
-                               R2m=mean(R2$R2m),
-                               R2c=mean(R2$R2c),
-                               Grazing_intensity=grazing_intensity)%>%
-                   add_column(., With_cover=with_cover))
     
   }  
-  
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor_cover_control/Importance/Importance_",
-                           stat,"_",with_cover,"_aridity_",grazing_intensity,".csv"),sep=";")
-  
-  write.table(d_all2,paste0("../Data/Linear_models_factor_cover_control/Estimator/Estimators_model_",stat
-                            ,"_",with_cover,"_aridity_",grazing_intensity,".csv"),sep=";")
   
 }
 
 library(parallel)
 
 mclapply(1:12,Run_model_importance_aridity,mc.cores = 12)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor_cover_control/Importance",paste0("aridity_all.csv"))){
-  d=read.table(paste0("../Data/Linear_models_factor_cover_control/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor_cover_control/Estimator",paste0("aridity_all.csv"))){
-  d2=read.table(paste0("../Data/Linear_models_factor_cover_control/Estimator/",k),sep=";")
-  if (nrow(d2)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor_cover_control/Importance_aridity_factor.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor_cover_control/Estimators_model_aridity_factor.csv"),sep=";")
-
 
 Run_model_importance_aridity_no_inter=function(id){
   
@@ -1041,14 +726,14 @@ Run_model_importance_aridity_no_inter=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + rho_p + Type_veg 
       + Sand + Org_C_v 
       + (1|Site_ID)")))
@@ -1056,7 +741,7 @@ Run_model_importance_aridity_no_inter=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
+      + Aridity + Grazing  + Herbivores
       + Type_veg
       + Sand + Org_C_v 
       + (1|Site_ID)")))
@@ -1099,104 +784,19 @@ Run_model_importance_aridity_no_inter=function(id){
     model_spa_stat = lmer(formula_mod, data = d_data_out, 
                           na.action = na.fail,REML ="FALSE")
     
-    # #do some model selection
-    select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                          Long_cos & Long_sin & Lattitude &
-                          dc(Woody & Grazing, Woody : Grazing) &
-                          dc(Aridity & Grazing, Aridity : Grazing) &
-                          dc(rho_p & Grazing, rho_p : Grazing) &
-                          dc(Org_C_v & Grazing, Org_C_v : Grazing) &
-                          dc(Sand  & Grazing, Sand  : Grazing) &
-                          dc(Type_veg & Grazing, Type_veg : Grazing),
-                        extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                                R2c=function(x) r.squaredGLMM(x)[2]),
-                        options(na.action = "na.fail") )
-    
-    if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-      
-      result_select=model_spa_stat
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      importance_mod=tibble(Interactions=1,
-                            Sand =1,
-                            Aridity=1,
-                            Org_C=1,
-                            Type_veg=1,
-                            Grazing=1,
-                            Cover=1,
-                            Woody=1)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                     With_cover=with_cover,
-                                     Grazing_intensity=grazing_intensity),
-                              importance_mod))
-      
-    }else{
-      
-      result_select=model.avg(select_model, subset = delta < 2)
-      
-      #Get the importance of each metric
-      importance_mod=sw(result_select)
-      R2=select_model%>%filter(., AICc<min(AICc)+2)
-      
-      d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                     N_outliers=rm.outliers$n.removed,
-                                     R2m=mean(R2$R2m),R2C=mean(R2$R2c)),
-                              Aggregate_importance(importance_mod,T))%>%
-                    add_column(., With_cover=with_cover,
-                               Grazing_intensity=grazing_intensity))
-      
-    }
     
     saveRDS(model_spa_stat,#MuMIn::get.models(select_model,subset = delta<2)[[1]],
             paste0("../Data/Linear_models_factor_cover_control/Keep_models/Mod_",stat,
                    "_",with_cover,"_aridity_no_inter_",grazing_intensity,".rds"))
     
-    summary_coef=confint(result_select)
-    
-    
-    #Merge in a df
-    d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                               q1=summary_coef[-1,1], 
-                               q3=summary_coef[-1,2],
-                               # pvalue=summary(result_select)$coefmat.full[-1,5],
-                               term=rownames(summary_coef)[-1],
-                               Stat=stat,
-                               R2m=mean(R2$R2m),
-                               R2c=mean(R2$R2c),
-                               Grazing_intensity=grazing_intensity)%>%
-                   add_column(., With_cover=with_cover))
     
   }
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor_cover_control/Importance/Importance_",
-                           stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"),sep=";")
-  write.table(d_all2,paste0("../Data/Linear_models_factor_cover_control/Estimator/Estimators_model_",
-                            stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"),sep=";")
   
 }
 
 library(parallel)
 
 mclapply(1:11,Run_model_importance_aridity_no_inter,mc.cores = 11)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor_cover_control/Importance",paste0("aridity_no_inter"))){
-  d=read.table(paste0("../Data/Linear_models_factor_cover_control/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor_cover_control/Estimator",paste0("aridity_no_inter"))){
-  d2=read.table(paste0("../Data/Linear_models_factor_cover_control/Estimator/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor_cover_control/Importance_aridity_no_inter_factor.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor_cover_control/Estimators_model_aridity_no_inter_factor.csv"),sep=";")
-
 
 ## >> 2) Analyzing the residuals ---- 
 
@@ -1298,6 +898,23 @@ for (with_interaction in c(F,T)){
                     ))
       
       
+      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Herbivores",plot=F) 
+      
+      
+      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Herbivores)
+      
+      d_slope=rbind(d_slope,
+                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
+                           q2=apply((mod_cov$t),2,median),
+                           q1=apply(mod_cov$t,2,quantile,.025),
+                           q3=apply(mod_cov$t,2,quantile,.975),
+                           q1_90=apply(mod_cov$t,2,quantile,.05),
+                           q3_90=apply(mod_cov$t,2,quantile,.95),
+                           With_cover=F,Grazing_intensity=grazing_intensity,
+                           ID_grazing=c("Goat","Horse","Sheep"),
+                           Stat=k,Driver="Herbivores"
+                    ))
+      
     }
   }
   
@@ -1396,15 +1013,13 @@ for (k in 1:length(list_sheets)){
 saveRDS(list_cover_quadrat[-grep("NA", names(list_cover_quadrat))],"../Data/Traits/All_quadrats.rds")
 write.table(d_traits,"../Data/Traits/Drypop_biodesert_cover.csv",sep=";")
 
-
-
-## >> 2) Computing CWM, CW variance and FD (functional divergence) ----
+## >> 2) Computing CWM  ----
 
 d_traits=read.table("../Data/Traits/Drypop_biodesert_cover.csv",sep=";")
 d_CWT_FD=Add_PCA_traits(d_traits)%>%
-  mutate(., Cover=Cover_quadrats)%>%
+  #mutate(., Cover=Cover_quadrats)%>%
   dplyr::filter(., !is.na(Cover))%>%#remove absent species
-  melt(., measure.vars=colnames(.)[c(7:16,grep("PC",colnames(.)))])%>%#for each trait
+  melt(., measure.vars=colnames(.)[c(8:18,grep("PC",colnames(.)))])%>%#for each trait
   dplyr::group_by(.,Country,Site,Plot,variable)%>%
   dplyr::summarise(., .groups = "keep",
                    CWM = sum((Cover/sum(Cover))*value,na.rm = T), # community weighted mean
@@ -1415,15 +1030,32 @@ d_CWT_FD=Add_PCA_traits(d_traits)%>%
                                                     (sum(abs(value-sum((Cover/sum(Cover))*value,na.rm = T)),na.rm = T))),na.rm = T) # functional divergence
   )
 
-d_CWM_life_form=Add_PCA_traits(d_traits)%>%
-  mutate(., Cover=Cover_quadrats)%>%
+d_CWM_life_form=d_traits%>%
+  #mutate(., Cover=Cover_quadrats)%>%
   dplyr::filter(., !is.na(Cover))%>%#remove absent species
   dplyr::group_by(.,Country,Site,Plot)%>%
   dplyr::do(., Life_form_quadrat(.$Life_form,.$Cover))
 
+#Diversity
+d_diversity_index=d_traits%>%
+  dplyr::filter(., !is.na(Cover))%>%#remove absent species
+  dplyr::group_by(.,Country,Site,Plot)%>%
+  dplyr::do(., Diversity_community_level(.))
+
+d_diversity_index[,4:ncol(d_diversity_index)]=
+  apply(d_diversity_index[,4:ncol(d_diversity_index)],
+        2,
+        function(x){
+          if (any(x==1e9)){
+            x[which(x==1e9)]=NA
+          }
+          return(x)
+        })
+  
 d_biodesert$Complete_name=gsub(" ","",paste0(d_biodesert$COU,"_",d_biodesert$SITE,"_",d_biodesert$PLOT))
 d_CWT_FD$Complete_name=sub(" ","",paste0(d_CWT_FD$Country,"_",gsub(" ","",d_CWT_FD$Site),"_",d_CWT_FD$Plot))
 d_CWM_life_form$Complete_name=sub(" ","",paste0(d_CWM_life_form$Country,"_",gsub(" ","",d_CWM_life_form$Site),"_",d_CWM_life_form$Plot))
+d_diversity_index$Complete_name=sub(" ","",paste0(d_diversity_index$Country,"_",gsub(" ","",d_diversity_index$Site),"_",d_diversity_index$Plot))
 
 d_CWT_FD=d_CWT_FD%>%
   add_column(.,
@@ -1442,7 +1074,26 @@ d_CWT_FD=d_CWT_FD%>%
                  return(d_biodesert$ID[which(d_biodesert$Complete_name==.$Complete_name[x])])
                }
              })))
+
 d_CWM_life_form=d_CWM_life_form%>%
+  add_column(.,
+             Graz=unlist(sapply(1:nrow(.),function(x){
+               if (length(d_biodesert$GRAZ[which(d_biodesert$Complete_name==.$Complete_name[x])])==0){
+                 return(NA)
+                 print(x)
+               }else{
+                 return(d_biodesert$GRAZ[which(d_biodesert$Complete_name==.$Complete_name[x])])
+               }
+             })),
+             ID=unlist(sapply(1:nrow(.),function(x){
+               if (length(d_biodesert$ID[which(d_biodesert$Complete_name==.$Complete_name[x])])==0){
+                 return(NA)
+               }else{
+                 return(d_biodesert$ID[which(d_biodesert$Complete_name==.$Complete_name[x])])
+               }
+             })))
+
+d_diversity_index=d_diversity_index%>%
   add_column(.,
              Graz=unlist(sapply(1:nrow(.),function(x){
                if (length(d_biodesert$GRAZ[which(d_biodesert$Complete_name==.$Complete_name[x])])==0){
@@ -1462,8 +1113,9 @@ d_CWM_life_form=d_CWM_life_form%>%
 
 write.table(d_CWT_FD,"../Data/Traits/CWM_FD_sites.csv",sep=";")
 write.table(d_CWM_life_form,"../Data/Traits/CWM_life_forms_sites.csv",sep=";")
+write.table(d_diversity_index,"../Data/Traits/Diversity_indices_whole_sites.csv",sep=";")
 
-## >> 3) Within quadrat scale: trait dispersion, aggregation, beta-diversity, alpha div, mean alpha div, beta div (for each trait) ----
+## >> 3) Within quadrat scale: trait dispersion, aggregation,  (for each trait) ----
 
 dir.create("../Data/Traits/PwD",showWarnings = F)
 dir.create("../Data/Traits/Diversity",showWarnings = F)
@@ -1471,11 +1123,13 @@ dir.create("../Data/Traits/QWT",showWarnings = F)
 
 Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
   
+  print(plot_id)
+  
   d_traits=read.table("../Data/Traits/Drypop_biodesert_cover.csv",sep=";")
   
   #Prior to analyses: standardize each trait 
   d_traits_scaled=Add_PCA_traits(d_traits)%>%
-    mutate(., Cover=Cover_quadrats)%>%
+    #mutate(., Cover=Cover_quadrats)%>%
     dplyr::filter(., !is.na(Cover))%>%#remove absent species
     dplyr::group_by(.,Country,Site,Plot)%>% 
     dplyr::mutate(., LL=(LL-mean(LL,na.rm=T))/(max(LL,na.rm=T)-min(LL,na.rm = T)),
@@ -1484,7 +1138,9 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
                   LA=(LA-mean(LA,na.rm=T))/(max(LA,na.rm=T)-min(LA,na.rm = T)),
                   MaxH=(MaxH-mean(MaxH,na.rm=T))/(max(MaxH,na.rm=T)-min(MaxH,na.rm = T)),
                   MaxLS=(MaxLS-mean(MaxLS,na.rm=T))/(max(MaxLS,na.rm=T)-min(MaxLS,na.rm = T)),
-                  Maxvolume=(Maxvolume-mean(Maxvolume,na.rm=T))/(max(Maxvolume,na.rm=T)-min(Maxvolume,na.rm = T)),
+                  d15N=(d15N-mean(d15N,na.rm=T))/(max(d15N,na.rm=T)-min(d15N,na.rm = T)),
+                  d13C=(d13C-mean(d13C,na.rm=T))/(max(d13C,na.rm=T)-min(d13C,na.rm = T)),
+                  # Maxvolume=(Maxvolume-mean(Maxvolume,na.rm=T))/(max(Maxvolume,na.rm=T)-min(Maxvolume,na.rm = T)),
                   Phenolics=(Phenolics-mean(Phenolics,na.rm=T))/(max(Phenolics,na.rm=T)-min(Phenolics,na.rm = T)),
                   LNC=(LNC-mean(LNC,na.rm=T))/(max(LNC,na.rm=T)-min(LNC,na.rm = T)),
                   LCC=(LCC-mean(LCC,na.rm=T))/(max(LCC,na.rm=T)-min(LCC,na.rm = T)),
@@ -1494,20 +1150,18 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
                   PC4_traits=(PC4_traits-mean(PC4_traits,na.rm=T))/(max(PC4_traits,na.rm=T)-min(PC4_traits,na.rm = T)),
                   Cover=Cover,
                   Genus=Genus,
-                  Species=Species
-    )
+                  Species=Species)
   
   d_traits_not_scaled=Add_PCA_traits(d_traits)%>%
-    mutate(., Cover=Cover_quadrats)%>%
+    #mutate(., Cover=Cover_quadrats)%>%
     dplyr::filter(., !is.na(Cover))
   
   
   list_quadrat_sites=list.files("../Data/Traits/Cover_quadrats/")
-  n_perm=2
-  
+  n_perm=100
   quadrat_k=read.table(paste0("../Data/Traits/Cover_quadrats/",list_quadrat_sites[plot_id]),sep=";")
   
-  country=strsplit(list_quadrat_sites[plot_id],"_")[[1]][1]
+  country=gsub(" ","",strsplit(list_quadrat_sites[plot_id],"_")[[1]][1])
   site=gsub(" ","",gsub('[0-9]+', '', strsplit(list_quadrat_sites[plot_id],"_")[[1]][2])) #in case 
   plot=as.numeric(gsub(".csv","",strsplit(list_quadrat_sites[plot_id],"_")[[1]][3]))
   
@@ -1531,7 +1185,12 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
     mutate(., Site = gsub(" ","",Site))%>%
     dplyr::filter(.,Country==country,Site==site,Plot==plot)
   
-  if (nrow(mat_quadrat)>1 & nrow(traits_site_ns)>2){ #At least two species and traits that have been measured
+  if (!is.matrix(mat_quadrat)){
+    mat_quadrat=matrix(mat_quadrat,ncol = 100)
+    colnames(mat_quadrat)=paste0("Quadrat_",1:100)
+  }
+  
+  if (nrow(mat_quadrat)>1 & nrow(traits_site_ns)>1){ #At least two species and traits that have been measured
     
     #Randomization of the quadrats
     Randomization_quadrat=vegan::permatfull(mat_quadrat,times = n_perm)
@@ -1574,7 +1233,8 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
       
       
       # 1.3-Random) Diversity of quadrats (alpha, beta)
-      d_diversity=rbind(d_diversity,Get_diversity_indices(abundance_mat = quadrat_k_id,traits_site = traits_site_ns)%>%
+      d_diversity=rbind(d_diversity,Get_diversity_indices(abundance_mat = quadrat_k_id,
+                                                          traits_site = traits_site_ns)%>%
                           add_column(., Randomization_id=random_id))
     }
     
@@ -1583,7 +1243,8 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
     for (column_id in 1:ncol(mat_quadrat)){# for each quadrat, compute the Quadrat weighted trait mean (here on observed species abundance)
       d_QWT_obs=rbind(d_QWT_obs,Get_CWT_traits(abundance = mat_quadrat[,column_id],traits_site = traits_site)%>%
                         add_column(., Quadrat=column_id,Randomization_id="Observed"))  
-      d_QWT_not_scaled_obs=rbind(d_QWT_not_scaled_obs,Get_CWT_traits(abundance = mat_quadrat[,column_id],traits_site = traits_site_ns)%>%
+      d_QWT_not_scaled_obs=rbind(d_QWT_not_scaled_obs,Get_CWT_traits(abundance = mat_quadrat[,column_id],
+                                                                     traits_site = traits_site_ns)%>%
                                    add_column(., Quadrat=column_id,Randomization_id="Observed"))  
     }
     
@@ -1610,6 +1271,7 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
                        q05_PwD=quantile(PwD,.05),
                        q95_PwD=quantile(PwD,.95),
                        mean_Var=mean(Variance),
+                       mean_sd=mean(sqrt(Variance)),
                        q025_Var=quantile(Variance,.025),
                        q975_Var=quantile(Variance,.975),
                        q05_Var=quantile(Variance,.05),
@@ -1623,11 +1285,13 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
                  q05_PwD_random=PwD_random$q05_PwD,
                  q95_PwD_random=PwD_random$q95_PwD,
                  mean_Var_random=PwD_random$mean_Var,
+                 mean_sd_random=PwD_random$mean_sd,
                  q025_Var_random=PwD_random$q025_Var,
                  q975_Var_random=PwD_random$q975_Var,
                  q05_Var_random=PwD_random$q05_Var,
                  q95_Var_random=PwD_random$q95_Var)%>%
-      dplyr::rename(., PwD_obs=PwD)
+      dplyr::rename(., PwD_obs=PwD)%>%
+      add_column(., sd_obs=sqrt(.$Variance))
     
     # 2.2-Observed) mean and variance of the dominant traits in quadrats
     
@@ -1654,12 +1318,16 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
     
     # 2.3-Observed) Diversity of quadrats (alpha, beta)
     
-    d_diversity_obs=Get_diversity_indices(mat_quadrat,traits_site_ns)%>%
+    d_diversity_obs=Get_diversity_indices(abundance_mat=mat_quadrat,
+                                          traits_site=traits_site_ns)%>%
       add_column(., Randomization_id="Observed")
     
     Diversity_tot=d_diversity%>%
       melt(.,id.vars = "Randomization_id")%>%
-      add_column(., Country=unique(PwD_tot$Country),Site=unique(PwD_tot$Site),Plot=unique(PwD_tot$Plot))%>%
+      add_column(., 
+                 Country=country,
+                 Site=site,
+                 Plot=plot)%>%
       dplyr::group_by(., variable,Country,Site,Plot)%>%
       dplyr::summarise(., .groups = "keep",
                        mean_div_random=mean(value,na.rm = T),
@@ -1670,7 +1338,7 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
     
     Diversity_tot=Diversity_tot%>%
       dplyr::ungroup(.)%>%
-      add_column(.,Div_observed=d_diversity_obs%>%melt(.)%>%pull(., value))
+      add_column(.,Div_observed=d_diversity_obs%>%reshape2::melt(.,id.vars="Randomization_id")%>%pull(., value))
     
     Diversity_tot[Diversity_tot==1e9]=0 #Since we use 1e9 as a numeric to avoid problems with dplyr
     
@@ -1681,7 +1349,7 @@ Run_diversity_spatialstruct_traits_quadrats=function(plot_id){
 }
 list_quadrat_sites=list.files("../Data/Traits/Cover_quadrats/")
 library(parallel)
-mclapply(1:length(list_quadrat_sites),Run_diversity_spatialstruct_traits_quadrats,mc.cores = 65)
+mclapply(1:length(list_quadrat_sites),Run_diversity_spatialstruct_traits_quadrats,mc.cores = 70)
 
 
 for (type_d in c("PwD","Diversity","QWT")){
@@ -1734,9 +1402,9 @@ d_pwd=read.table("../Data/Traits/Pwd_all_sites.csv",sep=";")%>%
              Site_ID=sapply(1:nrow(.),function(x){
                return(d_biodesert$SITE_ID[which(d_biodesert$ID==.$ID[x])])
              }),
-             Deviation=.$PwD_obs-.$mean_PwD_random,
-             Deviation_var=.$Variance-.$mean_Var_random
-  )
+             Deviation_sd=.$PwD_obs-.$mean_PwD_random,
+             Deviationgross=.$sd_obs-.$mean_sd_random,
+             Deviation_var=.$Variance-.$mean_Var_random)
 
 d_diversity=read.table("../Data/Traits/Diversity_all_sites.csv",sep=";")%>%
   add_column(., 
@@ -1754,13 +1422,6 @@ d_QWT=read.table("../Data/Traits/QWT_all_sites.csv",sep=";")%>%
   )
 
 
-d_life_form=read.table("../Data/Traits/Pwd_life_forms_all_sites.csv",sep=";")%>%
-  add_column(., 
-             Site_ID=sapply(1:nrow(.),function(x){
-               return(d_biodesert$SITE_ID[which(d_biodesert$ID==.$ID[x])])
-             }),
-             Deviation=.$PwD_obs-.$mean_PwD_random
-  )
 
 d_CWT_FD=read.table("../Data/Traits/CWM_FD_sites.csv",sep=";")
 
@@ -1775,40 +1436,12 @@ for (file_name in list.files("../Data/","Spatial_structure_grazing")){
   
   
   d_data=d_data%>%
-    add_column(.,Dev_LL=NA,Dev_SLA=NA,Dev_LDMC=NA,Dev_LA=NA,Dev_MaxH=NA,
-               Dev_MaxLS=NA,Dev_Maxvol=NA,Dev_Phenol=NA,Dev_LNC=NA,Dev_LCC=NA,Dev_PC1=NA,
-               Dev_PC2=NA,Dev_PC3=NA,Dev_PC4=NA,
-               Dev_Var_LL=NA,Dev_Var_SLA=NA,Dev_Var_LDMC=NA,Dev_Var_LA=NA,Dev_Var_MaxH=NA,
-               Dev_Var_MaxLS=NA,Dev_Var_Maxvol=NA,Dev_Var_Phenol=NA,Dev_Var_LNC=NA,Dev_Var_LCC=NA,Dev_Var_PC1=NA,
-               Dev_Var_PC2=NA,Dev_Var_PC3=NA,Dev_Var_PC4=NA,
-               # DEv_Woody=NA,DEv_Grass_woody=NA,DEv_Grass_herb=NA,DEv_Gerb_woody=NA,DEv_Grass=NA,DEv_Herb=NA,
-               CWM_LL=NA,CWM_SLA=NA,CWM_LDMC=NA,CWM_LA=NA,CWM_MaxH=NA,
-               CWM_MaxLS=NA,CWM_Maxvol=NA,CWM_Phenol=NA,CWM_LNC=NA,CWM_LCC=NA,CWM_PC1=NA,
-               CWM_PC2=NA,CWM_PC3=NA,CWM_PC4=NA,
-               FD_LL=NA,FD_SLA=NA,FD_LDMC=NA,FD_LA=NA,FD_MaxH=NA,
-               FD_MaxLS=NA,FD_Maxvol=NA,FD_Phenol=NA,FD_LNC=NA,FD_LCC=NA,FD_PC1=NA,
-               FD_PC2=NA,FD_PC3=NA,FD_PC4=NA,
-               CWMvar_LL=NA,CWMvar_SLA=NA,CWMvar_LDMC=NA,CWMvar_LA=NA,CWMvar_MaxH=NA,
-               CWMvar_MaxLS=NA,CWMvar_Maxvol=NA,CWMvar_Phenol=NA,CWMvar_LNC=NA,CWMvar_LCC=NA,CWMvar_PC1=NA,
-               CWMvar_PC2=NA,CWMvar_PC3=NA,CWMvar_PC4=NA,
-               #CWMKurt_LL=NA,CWMKurt_SLA=NA,CWMKurt_LDMC=NA,CWMKurt_LA=NA,CWMKurt_MaxH=NA,
-               #CWMKurt_MaxLS=NA,CWMKurt_Maxvol=NA,CWMKurt_Phenol=NA,CWMKurt_LNC=NA,CWMKurt_LCC=NA,CWMKurt_PC1=NA,
-               #CWMKurt_PC2=NA,CWMKurt_PC3=NA,CWMKurt_PC4=NA,
-               Div_alpha_mean=NA,Div_alpha_var=NA,
-               Div_beta_plot_composition=NA,Div_Functional_dissimilarity_bar=NA,Div_Functional_dissimilarity_var=NA,
-               Div_Dissimilarity_gap_bar=NA,Div_Dissimilarity_gap_var=NA,Div_Rao_beta=NA,
-               Div_Species_similarity_bar=NA,Div_Species_similarity_var=NA,Div_Rao_alpha=NA,
-               Div_beta_uniqueness_bar=NA,Div_beta_uniqueness_var=NA,Div_beta_redundancy_bar=NA,Div_beta_redundancy_var=NA,
-               QWM_LL=NA,QWM_SLA=NA,QWM_LDMC=NA,QWM_LA=NA,QWM_MaxH=NA,
-               QWM_MaxLS=NA,QWM_Maxvol=NA,QWM_Phenol=NA,QWM_LNC=NA,QWM_LCC=NA,QWM_PC1=NA,
-               QWM_PC2=NA,QWM_PC3=NA,QWM_PC4=NA,
-               QWV_LL=NA,QWV_SLA=NA,QWV_LDMC=NA,QWV_LA=NA,QWV_MaxH=NA,
-               QWV_MaxLS=NA,QWV_Maxvol=NA,QWV_Phenol=NA,QWV_LNC=NA,QWV_LCC=NA,QWV_PC1=NA,
-               QWV_PC2=NA,QWV_PC3=NA,QWV_PC4=NA
+    add_column(.,
+               Dev_MaxLS=NA,
+               CWM_MaxLS=NA
     )
   
-  
-  traits=grep("Dev",colnames(d_data))[-which(grep("Dev",colnames(d_data))%in% grep("Dev_Var",colnames(d_data)))]
+  traits=grep("Dev",colnames(d_data))
   all_traits_name=unique(d_pwd$variable)
   
   #Adding the deviation of each trait to the global dataset 
@@ -1819,7 +1452,7 @@ for (file_name in list.files("../Data/","Spatial_structure_grazing")){
           
           return(sapply(1:nrow(d_data),function(y){
             if (d_data$ID[y] %in% unique(d_pwd$ID)){
-              return(d_pwd$Deviation[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d_data)[x]),all_traits_name)] &
+              return(d_pwd$Deviation_sd[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d_data)[x]),all_traits_name)] &
                                              d_pwd$ID==d_data$ID[y] & d_pwd$Graz==d_data$Grazing[y])])
             }else{
               return(NA)
@@ -1828,30 +1461,6 @@ for (file_name in list.files("../Data/","Spatial_structure_grazing")){
           )
         })),
       nrow = nrow(d_data),length(traits)))
-  
-  
-  #Deviation but using the variance across quadrats
-  traits=grep("Dev_Var",colnames(d_data))
-  all_traits_name=unique(d_pwd$variable)
-  
-  #Adding the deviation of each trait to the global dataset 
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_pwd$ID)){
-              return(d_pwd$Deviation_var[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_Var_","",colnames(d_data)[x]),all_traits_name)] &
-                                                 d_pwd$ID==d_data$ID[y] & d_pwd$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
   
   traits=grep("CWM_",colnames(d_data)) 
   all_traits_name=unique(d_CWT_FD$variable)
@@ -1874,377 +1483,14 @@ for (file_name in list.files("../Data/","Spatial_structure_grazing")){
         })),
       nrow = nrow(d_data),length(traits)))
 
-  
-  traits=grep("FD_",colnames(d_data)) 
-  all_traits_name=unique(d_CWT_FD$variable)
-  
-  #Adding community weighted means to  to the global dataset 
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_CWT_FD$ID)){
-              return(d_CWT_FD$FD[which(d_CWT_FD$variable==all_traits_name[grep(gsub("FD_","",colnames(d_data)[x]),all_traits_name)] &
-                                          d_CWT_FD$ID==d_data$ID[y] & d_CWT_FD$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
-  traits=grep("CWMvar_",colnames(d_data)) 
-  all_traits_name=unique(d_CWT_FD$variable)
-  
-  #Adding community weighted varaiance to  to the global dataset 
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_CWT_FD$ID)){
-              return(d_CWT_FD$CW_Var[which(d_CWT_FD$variable==all_traits_name[grep(gsub("CWMvar_","",colnames(d_data)[x]),all_traits_name)] &
-                                             d_CWT_FD$ID==d_data$ID[y] & d_CWT_FD$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
-  # traits=grep("CWMKurt_",colnames(d_data)) 
-  # all_traits_name=unique(d_CWT_FD$variable)
-  # 
-  # #Adding community weighted kurtosis to  to the global dataset 
-  # d_data[,traits]=as.data.frame(
-  #   matrix(
-  #     unlist(
-  #       lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-  #         
-  #         return(sapply(1:nrow(d_data),function(y){
-  #           if (d_data$ID[y] %in% unique(d_CWT_FD$ID)){
-  #             return(d_CWT_FD$CW_kurt[which(d_CWT_FD$variable==all_traits_name[grep(gsub("CWMKurt_","",colnames(d_data)[x]),all_traits_name)] &
-  #                                             d_CWT_FD$ID==d_data$ID[y] & d_CWT_FD$Graz==d_data$Grazing[y])])
-  #           }else{
-  #             return(NA)
-  #           }
-  #         })
-  #         )
-  #       })),
-  #     nrow = nrow(d_data),length(traits)))
-  
-  # traits=grep("DEv_",colnames(d_data)) 
-  # all_traits_name=unique(d_life_form$variable)
-  # 
-  # #Adding community weighted kurtosis to  to the global dataset 
-  # d_data[,traits]=as.data.frame(
-  #   matrix(
-  #     unlist(
-  #       lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-  #         
-  #         return(sapply(1:nrow(d_data),function(y){
-  #           if (d_data$ID[y] %in% unique(d_life_form$ID)){
-  #             return(d_life_form$Deviation[which(d_life_form$variable==all_traits_name[grep(gsub("DEv_","",colnames(d_data)[x]),all_traits_name)] &
-  #                                             d_life_form$ID==d_data$ID[y] & d_life_form$Graz==d_data$Grazing[y])])
-  #           }else{
-  #             return(NA)
-  #           }
-  #         })
-  #         )
-  #       })),
-  #     nrow = nrow(d_data),length(traits)))
-  
-  
-  traits=grep("Div",colnames(d_data))
-  all_traits_name=unique(d_diversity$variable)
-  
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_diversity$ID)){
-              return(d_diversity$Div_observed[which(d_diversity$variable==all_traits_name[grep(gsub("Div_","",colnames(d_data)[x]),all_traits_name)] &
-                                                      d_diversity$ID==d_data$ID[y] & d_diversity$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
-  
-  traits=grep("QWM",colnames(d_data))
-  all_traits_name=unique(d_QWT$variable)
-  
-  #Adding community weighted kurtosis to  to the global dataset
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_QWT$ID)){
-              return(d_QWT$mean_QWT_obs[which(d_QWT$variable==all_traits_name[grep(gsub("QWM_","",colnames(d_data)[x]),all_traits_name)] &
-                                                d_QWT$ID==d_data$ID[y] & d_QWT$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
-  
-  traits=grep("QWV",colnames(d_data))
-  all_traits_name=unique(d_QWT$variable)
-  
-  #Adding community weighted kurtosis to  to the global dataset
-  d_data[,traits]=as.data.frame(
-    matrix(
-      unlist(
-        lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-          
-          return(sapply(1:nrow(d_data),function(y){
-            if (d_data$ID[y] %in% unique(d_QWT$ID)){
-              return(d_QWT$var_QWT_obs[which(d_QWT$variable==all_traits_name[grep(gsub("QWV_","",colnames(d_data)[x]),all_traits_name)] &
-                                               d_QWT$ID==d_data$ID[y] & d_QWT$Graz==d_data$Grazing[y])])
-            }else{
-              return(NA)
-            }
-          })
-          )
-        })),
-      nrow = nrow(d_data),length(traits)))
-  
-  
   write.table(d_data,paste0("../Data/",gsub(".csv","",gsub("_grazing","",file_name)),"_with_traits.csv"),sep=";")
   
 }
 
 
-
-#On biodesert
-
-d_biodesert_trait=d_biodesert%>%
-  dplyr::rename(., "Woody"="RWCQ")%>%
-  add_column(., 
-             Long_cos=cos(.$Long_decimal),
-             Long_sin=sin(.$Long_decimal),
-             Lattitude=.$Lat_decimal,
-             Slope=d_biodesert$`SLOPE-ALOS30`,
-             Elevation=d_biodesert$`ELE-ALOS30`,
-             Site_ID=.$SITE_ID,
-             Grazing=.$GRAZ,
-             Aridity=.$ARIDITY
-             )%>%
-  
-  add_column(.,Dev_LL=NA,Dev_SLA=NA,Dev_LDMC=NA,Dev_LA=NA,Dev_MaxH=NA,
-             Dev_MaxLS=NA,Dev_Maxvol=NA,Dev_Phenol=NA,Dev_LNC=NA,Dev_LCC=NA,Dev_PC1=NA,
-             Dev_PC2=NA,Dev_PC3=NA,Dev_PC4=NA,
-             Dev_Var_LL=NA,Dev_Var_SLA=NA,Dev_Var_LDMC=NA,Dev_Var_LA=NA,Dev_Var_MaxH=NA,
-             Dev_Var_MaxLS=NA,Dev_Var_Maxvol=NA,Dev_Var_Phenol=NA,Dev_Var_LNC=NA,Dev_Var_LCC=NA,Dev_Var_PC1=NA,
-             Dev_Var_PC2=NA,Dev_Var_PC3=NA,Dev_Var_PC4=NA,
-             CWM_LL=NA,CWM_SLA=NA,CWM_LDMC=NA,CWM_LA=NA,CWM_MaxH=NA,
-             CWM_MaxLS=NA,CWM_Maxvol=NA,CWM_Phenol=NA,CWM_LNC=NA,CWM_LCC=NA,CWM_PC1=NA,
-             CWM_PC2=NA,CWM_PC3=NA,CWM_PC4=NA,
-             CWMvar_LL=NA,CWMvar_SLA=NA,CWMvar_LDMC=NA,CWMvar_LA=NA,CWMvar_MaxH=NA,
-             CWMvar_MaxLS=NA,CWMvar_Maxvol=NA,CWMvar_Phenol=NA,CWMvar_LNC=NA,CWMvar_LCC=NA,CWMvar_PC1=NA,
-             CWMvar_PC2=NA,CWMvar_PC3=NA,CWMvar_PC4=NA,
-             Div_alpha_mean=NA,Div_alpha_var=NA,
-             Div_beta_plot_composition=NA,Div_Functional_dissimilarity_bar=NA,Div_Functional_dissimilarity_var=NA,
-             Div_Dissimilarity_gap_bar=NA,Div_Dissimilarity_gap_var=NA,Div_Rao_beta=NA,
-             Div_Species_similarity_bar=NA,Div_Species_similarity_var=NA,Div_Rao_alpha=NA,
-             Div_beta_uniqueness_bar=NA,Div_beta_uniqueness_var=NA,Div_beta_redundancy_bar=NA,Div_beta_redundancy_var=NA,
-             QWM_LL=NA,QWM_SLA=NA,QWM_LDMC=NA,QWM_LA=NA,QWM_MaxH=NA,
-             QWM_MaxLS=NA,QWM_Maxvol=NA,QWM_Phenol=NA,QWM_LNC=NA,QWM_LCC=NA,QWM_PC1=NA,
-             QWM_PC2=NA,QWM_PC3=NA,QWM_PC4=NA,
-             QWV_LL=NA,QWV_SLA=NA,QWV_LDMC=NA,QWV_LA=NA,QWV_MaxH=NA,
-             QWV_MaxLS=NA,QWV_Maxvol=NA,QWV_Phenol=NA,QWV_LNC=NA,QWV_LCC=NA,QWV_PC1=NA,
-             QWV_PC2=NA,QWV_PC3=NA,QWV_PC4=NA
-  )
-
-
-traits=grep("Dev",colnames(d_biodesert_trait))[-which(grep("Dev",colnames(d_biodesert_trait))%in% grep("Dev_Var",colnames(d_biodesert_trait)))]
-all_traits_name=unique(d_pwd$variable)
-
-#Adding the deviation of each trait to the global dataset 
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_pwd$ID)){
-            return(d_pwd$Deviation[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                           d_pwd$ID==d_biodesert_trait$ID[y] & d_pwd$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-
-#Deviation but using the variance across quadrats
-traits=grep("Dev_Var",colnames(d_biodesert_trait))
-all_traits_name=unique(d_pwd$variable)
-
-#Adding the deviation of each trait to the global dataset 
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_pwd$ID)){
-            return(d_pwd$Deviation_var[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_Var_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                               d_pwd$ID==d_biodesert_trait$ID[y] & d_pwd$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-
-traits=grep("CWM_",colnames(d_biodesert_trait)) 
-all_traits_name=unique(d_CWT_FD$variable)
-
-#Adding community weighted means to  to the global dataset 
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_CWT_FD$ID)){
-            return(d_CWT_FD$CWM[which(d_CWT_FD$variable==all_traits_name[grep(gsub("CWM_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                        d_CWT_FD$ID==d_biodesert_trait$ID[y] & d_CWT_FD$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-traits=grep("CWMvar_",colnames(d_biodesert_trait)) 
-all_traits_name=unique(d_CWT_FD$variable)
-
-#Adding community weighted varaiance to  to the global dataset 
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_CWT_FD$ID)){
-            return(d_CWT_FD$CW_Var[which(d_CWT_FD$variable==all_traits_name[grep(gsub("CWMvar_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                           d_CWT_FD$ID==d_biodesert_trait$ID[y] & d_CWT_FD$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-traits=grep("Div",colnames(d_biodesert_trait))[-1]
-all_traits_name=unique(d_diversity$variable)
-
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_diversity$ID)){
-            return(d_diversity$Div_observed[which(d_diversity$variable==all_traits_name[grep(gsub("Div_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                                    d_diversity$ID==d_biodesert_trait$ID[y] & d_diversity$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-
-traits=grep("QWM",colnames(d_biodesert_trait))
-all_traits_name=unique(d_QWT$variable)
-
-#Adding community weighted kurtosis to  to the global dataset
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_QWT$ID)){
-            return(d_QWT$mean_QWT_obs[which(d_QWT$variable==all_traits_name[grep(gsub("QWM_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                              d_QWT$ID==d_biodesert_trait$ID[y] & d_QWT$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-
-
-traits=grep("QWV",colnames(d_biodesert_trait))
-all_traits_name=unique(d_QWT$variable)
-
-#Adding community weighted kurtosis to  to the global dataset
-d_biodesert_trait[,traits]=as.data.frame(
-  matrix(
-    unlist(
-      lapply(traits,function(x){ #Getting the deviation from randomness for each trait x and for each vegetation image y
-        
-        return(sapply(1:nrow(d_biodesert_trait),function(y){
-          if (d_biodesert_trait$ID[y] %in% unique(d_QWT$ID)){
-            return(d_QWT$var_QWT_obs[which(d_QWT$variable==all_traits_name[grep(gsub("QWV_","",colnames(d_biodesert_trait)[x]),all_traits_name)] &
-                                             d_QWT$ID==d_biodesert_trait$ID[y] & d_QWT$Graz==d_biodesert_trait$Grazing[y])])
-          }else{
-            return(NA)
-          }
-        })
-        )
-      })),
-    nrow = nrow(d_biodesert_trait),length(traits)))
-write.table(d_biodesert_trait,"../Data/Biodesert_all_sites_traits.csv",sep=";")
-
-# ---------------------- Step 4: d-sep with traits ----
-# 
-# d_data=Perform_PCA_spatial_struc(
-#   Closer_to_normality_CWM(
-#     read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";")))%>%
-#   mutate(., Grazing=as.factor(Grazing))
-# d_data[,c(1,9:29,38,40:44,47:80,83:ncol(d_data))] =
-#   apply(d_data[,c(1,9:29,38,40:44,47:80,83:ncol(d_data))],2,z_tranform)
-# save=d_data #data with spatial structure
-# 
-
-
 d=readxl::read_xlsx("../Data/Final_biodesert.xlsx")[,-c(112:319)]%>%
-  add_column(.,
-             Dev_LL=NA,Dev_SLA=NA,Dev_LDMC=NA,Dev_LA=NA,Dev_MaxH=NA,
-             Dev_MaxLS=NA,Dev_Maxvol=NA,Dev_Phenol=NA,Dev_LNC=NA,Dev_LCC=NA,Dev_PC1=NA,
-             Dev_PC2=NA,Dev_PC3=NA,Dev_PC4=NA,
-             # DEv_Woody=NA,DEv_Grass_woody=NA,DEv_Grass_herb=NA,DEv_Gerb_woody=NA,DEv_Grass=NA,DEv_Herb=NA,
-             CWM_LL=NA,CWM_SLA=NA,CWM_LDMC=NA,CWM_LA=NA,CWM_MaxH=NA,
-             CWM_MaxLS=NA,CWM_Maxvol=NA,CWM_Phenol=NA,CWM_LNC=NA,CWM_LCC=NA,CWM_PC1=NA,
-             CWM_PC2=NA,CWM_PC3=NA,CWM_PC4=NA)%>%
+  add_column(.,Dev_MaxLS=NA,
+             CWM_MaxLS=NA)%>%
   dplyr::rename(., 
                 "Grazing"="GRAZ",
                 "Slope"=`SLOPE-ALOS30`,
@@ -2263,14 +1509,14 @@ d=readxl::read_xlsx("../Data/Final_biodesert.xlsx")[,-c(112:319)]%>%
   add_column(., 
              Long_cos=cos(.$Longitude),
              Long_sin=sin(.$Longitude)
-  )
+  )%>%as.data.frame(.)
 
 d_pwd=read.table("../Data/Traits/Pwd_all_sites.csv",sep=";")%>%
   add_column(., 
              Site_ID=sapply(1:nrow(.),function(x){
                return(d_biodesert$SITE_ID[which(d_biodesert$ID==.$ID[x])])
              }),
-             Deviation=.$PwD_obs-.$mean_PwD_random
+             Deviation_sd=.$sd_obs-.$mean_sd_random
   )
 
 
@@ -2287,8 +1533,8 @@ d[,traits]=as.data.frame(
         
         return(sapply(1:nrow(d),function(y){
           if (d$ID[y] %in% unique(d_pwd$ID)){
-            return(d_pwd$Deviation[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d)[x]),all_traits_name)] &
-                                           d_pwd$ID==d$ID[y] & d_pwd$Graz==d$Grazing[y])])
+            return(d_pwd$Deviation_sd[which(d_pwd$variable==all_traits_name[grep(gsub("Dev_","",colnames(d)[x]),all_traits_name)] &
+                                              d_pwd$ID==d$ID[y] & d_pwd$Graz==d$Grazing[y])])
           }else{
             return(NA)
           }
@@ -2323,959 +1569,198 @@ d[,traits]=as.data.frame(
 #normality assumptions
 
 d=d%>%mutate(., 
-             CWM_LA=log(CWM_LA),
-             CWM_LL=log(CWM_LL+1),
-             CWM_MaxH=log(CWM_MaxH+1),
              CWM_MaxLS=log(CWM_MaxLS+1),
-             CWM_Maxvol=log(CWM_Maxvol),
              Slope=log(Slope+1))
 
 d$ID=as.character(d$ID)
 d$Site_ID=as.character(d$Site_ID)
+write.table(as.data.frame(d),"../Data/Biodesert_all_sites_traits.csv",sep=";")
 
-d[,colnames(dplyr::select_if(d, is.numeric))]=apply(d[,colnames(dplyr::select_if(d, is.numeric))],2,function(x){return((x-mean(x,na.rm=T))/sd(x,na.rm = T))})
+# ---------------------- Step 4: Path analysis with traits ----
+
+#Data of spatial structure
+
+d_data=Perform_PCA_spatial_struc(
+  Closer_to_normality_CWM(
+    read.table("../Data/Spatial_structure_control_cover_with_traits.csv",sep=";")))%>%
+  mutate(., Grazing=as.factor(Grazing),ID=as.character(ID))%>%
+  mutate(., Dev_MaxLS=-Dev_MaxLS,#positive values = facilitation
+         Grazing=scale(as.numeric(Grazing))[,1])
+
+d_data[,colnames(dplyr::select_if(d_data, is.numeric))]=apply(d_data[,colnames(dplyr::select_if(d_data, is.numeric))],
+                                                    2,
+                                                    function(x){return((x-mean(x,na.rm=T))/sd(x,na.rm = T))})
+
+d=read.table("../Data/Biodesert_all_sites_traits.csv",sep=";",quote = "")
+colnames(d)=gsub("X.","",colnames(d))
+
+current_names=c("CWM_MaxLS.","Dev_MaxLS.","Woody.","Lattitude.",
+                "Long_cos.","Long_sin.","Elevation.",
+                "Grazing.","Aridity.","Site_ID.")
+changed_names=c("CWM_MaxLS","Dev_MaxLS","Woody","Lattitude",
+                "Long_cos","Long_sin","Elevation",
+                "Grazing","Aridity","Site_ID")
+for (k in 1:length(current_names)){
+  colnames(d)[which(colnames(d)==current_names[k])]=changed_names[k]
+}
+d[,colnames(dplyr::select_if(d, is.numeric))]=apply(d[,colnames(dplyr::select_if(d, is.numeric))],
+                                                    2,
+                                                    function(x){return((x-mean(x,na.rm=T))/sd(x,na.rm = T))})
 
 d_mod1=dplyr::filter(d,!is.na(CWM_MaxLS))%>%
   mutate(., Grazing=as.numeric(Grazing))
 
-mod1=lmer(CWM_MaxLS~Aridity+I(Aridity^2)+(1|Site_ID)+Grazing+Woody+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod1,na.action = na.omit)
-
-d_mod2=dplyr::filter(d,!is.na(CWM_MaxLS),!is.na(Dev_MaxLS))%>%
-  mutate(., Grazing=as.numeric(Grazing),Dev_MaxLS=-Dev_MaxLS)
-
-mod2=lmer(Dev_MaxLS~Aridity+I(Aridity^2)+Grazing+(1|Site_ID)+CWM_MaxLS+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod2,na.action = na.omit)
+mod1=lmer(CWM_MaxLS~Aridity+I(Aridity^2)+(1|Site_ID)+Grazing+Woody+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod1,na.action = na.fail)
 
 d_mod3=dplyr::filter(d,!is.na(Woody))%>%
   mutate(., Grazing=as.numeric(Grazing))
 
-mod3=lmer(Woody~Aridity+I(Aridity^2)+Grazing+(1|Site_ID)+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod3,na.action = na.omit)
-# 
-# d_mod4=dplyr::filter(save,!is.na(Woody),!is.na(CWM_MaxLS),!is.na(Dev_MaxLS))%>%
-#   mutate(., Dev_MaxLS=-Dev_MaxLS,Grazing=scale(as.numeric(Grazing))[,1])
-# 
-# mod4=lmer(Struct1~(1|Site_ID)+CWM_MaxLS+Woody+Dev_MaxLS+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod4,
-#           na.action = na.omit)
+mod3=lmer(Woody~Aridity+I(Aridity^2)+Grazing+(1|Site_ID)+Lattitude+Long_cos+Long_sin+Elevation,data=d_mod3,na.action = na.fail)
 
-dSep(psem(
-  mod1,mod2,mod3#,mod4
-))
-piecewiseSEM::fisherC(psem(
-  mod1,mod2,mod3#,mod4
-))
+
+#Since woody and CWM correlated, we perform PLS
+#First for DEV_MAXLS
+
+d_mod2=d%>%
+  mutate(., Grazing=as.numeric(Grazing))
+
+d_mod2=d_mod2[,c("Dev_MaxLS","CWM_MaxLS","Aridity","Woody","Grazing","Lattitude","Long_cos","Long_sin","Elevation")]%>%
+  dplyr::filter(., !is.na(Dev_MaxLS),!is.na(CWM_MaxLS))%>%
+  dplyr::mutate(., Dev_MaxLS= -Dev_MaxLS) #positive = facilitation
+
+cv.modpls = cv.plsR(Dev_MaxLS~.,data=d_mod2,K=10,nt=10,modele = "pls",
+                    grouplist = createFolds(d_mod2[,1], k = 10, list = F, returnTrain = FALSE),NK=200,verbose = F)
+
+#We check number of components
+res_cv=cvtable(summary(cv.modpls,MClassed=T))
+#5 or 3 components according to CV
+
+weights_mod=res_cv$CVPress[c(3,5)] #98 and 46
+
+mod_pls = plsR(Dev_MaxLS~.,data=d_mod2,nt=10,pvals.expli=TRUE,typeVC = "adaptative")
+
+#2 or 3 components according to AIC 
+
+
+#We perform the two PLS
+mod_pls = plsR(Dev_MaxLS~.,data=d_mod2,nt=3,pvals.expli=TRUE,typeVC = "adaptative")
+boot_pls_mod_3= bootpls(mod_pls,typeboot="fmodel_np",R=2000,verbose = T)
+
+mod_pls = plsR(Dev_MaxLS~.,data=d_mod2,nt=5,pvals.expli=TRUE,typeVC = "adaptative")
+boot_pls_mod_5= bootpls(mod_pls,typeboot="fmodel_np",R=2000,verbose = T)
+#R2 = 0.39
+
+#And coefficient by the relative support of the two PLS
+d_result_mod2 = data.frame(predictor=c("CWM_MaxLS","Aridity","Woody","Grazing","Lattitude","Long_cos","Long_sin","Elevation"),
+                          q2=cbind(boot_pls_mod_3$t0[-1,],boot_pls_mod_5$t0[-1,]) %*% prop.table(weights_mod), #weighted mean
+                          mean=cbind(apply(boot_pls_mod_3$t[,-1],2,mean),
+                                     apply(boot_pls_mod_5$t[,-1],2,mean))%*% prop.table(weights_mod),
+                          q1=apply(cbind(apply(boot_pls_mod_3$t[,-1],2,quantile,.025),
+                                         apply(boot_pls_mod_5$t[,-1],2,quantile,.025)),1,
+                                   function(x){return(min((x)))}),#return largest incertitude
+                          q3=apply(cbind(apply(boot_pls_mod_3$t[,-1],2,quantile,.975),
+                                         apply(boot_pls_mod_5$t[,-1],2,quantile,.975)),1,
+                                   function(x){return(max((x)))}),#return largest incertitude
+                          sd=apply(cbind(apply(boot_pls_mod_3$t[,-1],2,sd),
+                                         apply(boot_pls_mod_5$t[,-1],2,sd)),1,
+                                   function(x){return(max((x)))})#return largest incertitude
+)
+
+
+d_mod4=d_data[,c("Struct1","Dev_MaxLS","CWM_MaxLS","Woody","Lattitude","Long_cos","Long_sin","Elevation")]
+
+cv.modpls = cv.plsR(Struct1~.,data=d_mod4,K=10,nt=10,modele = "pls",
+                    grouplist = createFolds(d_mod4[,1], k = 10, list = F, returnTrain = FALSE),NK=200,verbose = F)
+
+#We check number of components
+res_cv=cvtable(summary(cv.modpls,MClassed=T))
+weights_mod=res_cv$CVPress[c(4,5,6)]
+#4 5 6 for CV. 43,65,82
+
+mod_pls = plsR(Struct1~.,data=d_mod4,nt=10,pvals.expli=TRUE,typeVC = "adaptative")
+mod_pls$AIC
+#R2 =.38
+#3 or 4 for AIC components according to AIC and cross validation
+
+
+#We perform the three PLS
+mod_pls = plsR(Struct1~.,data=d_mod4,nt=4,pvals.expli=TRUE,typeVC = "adaptative")
+boot_pls_mod_4= bootpls(mod_pls,typeboot="fmodel_np",R=2000,verbose = T)
+
+mod_pls = plsR(Struct1~.,data=d_mod4,nt=5,pvals.expli=TRUE,typeVC = "adaptative")
+boot_pls_mod_5= bootpls(mod_pls,typeboot="fmodel_np",R=2000,verbose = T)
+
+mod_pls = plsR(Struct1~.,data=d_mod4,nt=6,pvals.expli=TRUE,typeVC = "adaptative")
+boot_pls_mod_6= bootpls(mod_pls,typeboot="fmodel_np",R=2000,verbose = T)
+
+
+#And coefficient by the relative support of the two PLS
+d_result_mod4 = data.frame(predictor=c("Dev_MaxLS","CWM_MaxLS","Woody","Lattitude","Long_cos","Long_sin","Elevation"),
+                          q2=cbind(boot_pls_mod_4$t0[-1,],boot_pls_mod_5$t0[-1,],boot_pls_mod_6$t0[-1,]) %*% prop.table(weights_mod), #weighted mean
+                          mean=cbind(apply(boot_pls_mod_4$t[,-1],2,mean),
+                                     apply(boot_pls_mod_5$t[,-1],2,mean),
+                                     apply(boot_pls_mod_6$t[,-1],2,mean)) %*% prop.table(weights_mod),
+                          q1=apply(cbind(apply(boot_pls_mod_4$t[,-1],2,quantile,.025),
+                                         apply(boot_pls_mod_5$t[,-1],2,quantile,.025),
+                                         apply(boot_pls_mod_6$t[,-1],2,quantile,.025)),1,
+                                   function(x){return(min((x)))}),#return largest incertitude
+                          q3=apply(cbind(apply(boot_pls_mod_4$t[,-1],2,quantile,.975),
+                                         apply(boot_pls_mod_5$t[,-1],2,quantile,.975),
+                                         apply(boot_pls_mod_6$t[,-1],2,quantile,.975)),1,
+                                   function(x){return(max((x)))}),#return largest incertitude
+                          sd=apply(cbind(apply(boot_pls_mod_4$t[,-1],2,sd),
+                                         apply(boot_pls_mod_5$t[,-1],2,sd),
+                                         apply(boot_pls_mod_6$t[,-1],2,sd)),1,
+                                   function(x){return(max((x)))})#return largest incertitude
+)
+
 
 r.squaredGLMM(mod1)
-r.squaredGLMM(mod2)
 r.squaredGLMM(mod3)
 
-boot_mod1 = bootstrap(mod1, .f = fixef, type = "parametric", B = 1000)
-boot_mod2 = bootstrap(mod2, .f = fixef, type = "parametric", B = 1000)
-boot_mod3 = bootstrap(mod3, .f = fixef, type = "parametric", B = 1000)
-# boot_mod4 = bootstrap(mod4, .f = fixef, type = "parametric", B = 1000)
 
-d_dsep=tibble(
-  Response=c(rep("CWM_MaxLS",dim(boot_mod1$replicates)[2]),rep("Dev_MaxLS",dim(boot_mod2$replicates)[2]),
-             rep("Woody",dim(boot_mod3$replicates)[2]),rep("Struct_PC1",dim(boot_mod4$replicates)[2])),
+boot_mod1 = bootstrap(mod1, .f = fixef, type = "parametric", B = 1000)
+boot_mod3 = bootstrap(mod3, .f = fixef, type = "parametric", B = 1000)
+
+d_all=tibble(
+  Response=c(rep("CWM_MaxLS",dim(boot_mod1$replicates)[2]),
+             rep("Dev_MaxLS",nrow(d_result_mod2)),
+             rep("Woody",dim(boot_mod3$replicates)[2]),
+             rep("Struct_PC1",nrow(d_result_mod4))),
   Pval=c(apply(boot_mod1$replicates,2,twoside_pvalue),
-         apply(boot_mod2$replicates,2,twoside_pvalue),
+         apply(boot_pls_mod_3$t[,-1],2,twoside_pvalue),#apply(boot_pls_mod_8$t[,-1],2,twoside_pvalue) give the same
          apply(boot_mod3$replicates,2,twoside_pvalue),
-         apply(boot_mod4$replicates,2,twoside_pvalue)),
+         apply(boot_pls_mod_4$t[,-1],2,twoside_pvalue)),
   Variable=c(colnames(boot_mod1$replicates),
-             colnames(boot_mod2$replicates),
+             d_result_mod2$predictor,
              colnames(boot_mod3$replicates),
-             colnames(boot_mod4$replicates)),
+             d_result_mod4$predictor),
   q2=c(apply(boot_mod1$replicates,2,median),
-       apply(boot_mod2$replicates,2,median),
+       d_result_mod2$q2,
        apply(boot_mod3$replicates,2,median),
-       apply(boot_mod4$replicates,2,median)),
+       d_result_mod4$q2),
   mean=c(apply(boot_mod1$replicates,2,mean),
-         apply(boot_mod2$replicates,2,mean),
+         d_result_mod2$mean,
          apply(boot_mod3$replicates,2,mean),
-         apply(boot_mod4$replicates,2,mean)),
+         d_result_mod4$mean),
   sd=c(apply(boot_mod1$replicates,2,sd),
-       apply(boot_mod2$replicates,2,sd),
+       d_result_mod2$sd,
        apply(boot_mod3$replicates,2,sd),
-       apply(boot_mod4$replicates,2,sd)),
+       d_result_mod4$sd),
   q1=c(apply(boot_mod1$replicates,2,quantile,.025),
-       apply(boot_mod2$replicates,2,quantile,.025),
+       d_result_mod2$q1,
        apply(boot_mod3$replicates,2,quantile,.025),
-       apply(boot_mod4$replicates,2,quantile,.025)),
+       d_result_mod4$q1),
   q3=c(apply(boot_mod1$replicates,2,quantile,.975),
-       apply(boot_mod2$replicates,2,quantile,.975),
+       d_result_mod2$q3,
        apply(boot_mod3$replicates,2,quantile,.975),
-       apply(boot_mod4$replicates,2,quantile,.975))
+       d_result_mod4$q3)
 )
 
 dir.create("../Data/Dsep",showWarnings = F)
-write.table(d_dsep,"../Data/Dsep/CI_links_dsep.csv",sep=";")
+write.table(d_all,"../Data/Dsep/CI_links_dsep.csv",sep=";")
 
-#partial residuals
-
-Partial_woody=visreg::visreg(mod4,"Woody",plot = F)
-Partial_CWM_MaxLS=visreg::visreg(mod4,"CWM_MaxLS",plot = F)
-Partial_Dev_MaxLS=visreg::visreg(mod4,"Dev_MaxLS",plot = F)
-
-
-write.table(
-  tibble(Residuals=c(Partial_woody$res$visregRes,
-                     Partial_CWM_MaxLS$res$visregRes,
-                     Partial_Dev_MaxLS$res$visregRes),
-         Value=c(Partial_woody$res$Woody,
-                     Partial_CWM_MaxLS$res$CWM_MaxLS,
-                     Partial_Dev_MaxLS$res$Dev_MaxLS),
-         Drivers=c(rep("woody",nrow(Partial_woody$res)),
-                   rep("CWM_MaxLS",nrow(Partial_CWM_MaxLS$res)),
-                   rep("DevMAxLS",nrow(Partial_Dev_MaxLS$res))))
-  ,"../Data/Dsep/Partial_residuals.csv",sep=";")
-
-
-
-
-# ---------------------- Step 5: Changing grazing reference level ----
-## >> 1) Changing to grazing intensity 1 ----
-
-dir.create("./Linear_models_factor_ref1",showWarnings = F)
-dir.create("./Linear_models_factor_ref1/Importance",showWarnings = F)
-dir.create("./Linear_models_factor_ref1/Estimator",showWarnings = F)
-dir.create("./Linear_models_factor_ref1/Keep_data",showWarnings = F)
-dir.create("./Linear_models_factor_ref1/Keep_models",showWarnings = F)
-
-Run_model_importance_aridity_no_inter=function(id){
-  
-  list_mod=rbind(expand.grid(with_cover=c(T,F),
-                             Stats=c("perim_area_scaling","fmax_psd","PL_expo",
-                                     "core_area_land","core_area","flow_length","PLR","KS_dist","Shape_metric")))
-  
-  d_all=d_all2=tibble()#for keeping all information
-  
-  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-    Closer_to_normality(.)
-  
-  d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-    apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-  
-  d_data=Perform_PCA_spatial_struc(d_data)
-  
-  stat=list_mod$Stats[id]
-  
-  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
-  
-  with_cover=list_mod$with_cover[id]
-  
-  if (with_cover){
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + rho_p + Type_veg 
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-    
-  } else{
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + Type_veg
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-  }
-  
-  save=d_data_mod
-  grazing_intensity='all'
-  d_data_mod=save
-  
-  d_data_mod$Grazing=as.factor(d_data_mod$Grazing)
-  d_data_mod$Grazing = relevel(d_data_mod$Grazing,ref = "1")
-  
-  model_spa_stat  = lmer(formula_mod, d_data_mod,
-                         na.action = na.fail ,REML ="FALSE")
-  
-  #we remove potential outliers
-  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-  d_data_out = rm.outliers$data
-  
-  #saving data
-  write.table(d_data_out,paste0("../Data/Linear_models_factor_ref1/Keep_data/Data_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"))
-  
-  model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                        na.action = na.fail,REML ="FALSE")
-  
-  # #do some model selection
-  select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                        Long_cos & Long_sin & Lattitude &
-                        dc(Woody & Grazing, Woody : Grazing) &
-                        dc(Aridity & Grazing, Aridity : Grazing) &
-                        dc(rho_p & Grazing, rho_p : Grazing) &
-                        dc(Org_C_v & Grazing, Org_C_v : Grazing) &
-                        dc(Sand  & Grazing, Sand  : Grazing) &
-                        dc(Type_veg & Grazing, Type_veg : Grazing),
-                      extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                              R2c=function(x) r.squaredGLMM(x)[2]),
-                      options(na.action = "na.fail") )
-  
-  if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-    
-    result_select=model_spa_stat
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    importance_mod=tibble(Interactions=1,
-                          Sand =1,
-                          Aridity=1,
-                          Org_C=1,
-                          Type_veg=1,
-                          Grazing=1,
-                          Cover=1,
-                          Woody=1)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                   With_cover=with_cover,
-                                   Grazing_intensity=grazing_intensity),
-                            importance_mod))
-    
-  }else{
-    
-    result_select=model.avg(select_model, subset = delta < 2)
-    
-    #Get the importance of each metric
-    importance_mod=sw(result_select)
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c)),
-                            Aggregate_importance(importance_mod,T))%>%
-                  add_column(., With_cover=with_cover,
-                             Grazing_intensity=grazing_intensity))
-    
-  }
-  
-  saveRDS(model_spa_stat,paste0("../Data/Linear_models_factor_ref1/Keep_models/Mod_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".rds"))
-  
-  summary_coef=confint(result_select)
-  
-  
-  #Merge in a df
-  d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                             q1=summary_coef[-1,1], 
-                             q3=summary_coef[-1,2],
-                             # pvalue=summary(result_select)$coefmat.full[-1,5],
-                             term=rownames(summary_coef)[-1],
-                             Stat=stat,
-                             R2m=mean(R2$R2m),
-                             R2c=mean(R2$R2c),
-                             Grazing_intensity=grazing_intensity)%>%
-                 add_column(., With_cover=with_cover))
-  
-  
-  
-  
-  
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor_ref1/Importance/Importance_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  write.table(d_all2,paste0("../Data/Linear_models_factor_ref1/Estimator/Estimators_model_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  
-}
-
-library(parallel)
-
-mclapply(1:18,Run_model_importance_aridity_no_inter,mc.cores = 18)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor_ref1/Importance",paste0("aridity_no_inter"))){
-  d=read.table(paste0("../Data/Linear_models_factor_ref1/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor_ref1/Estimator",paste0("aridity_no_inter"))){
-  d2=read.table(paste0("../Data/Linear_models_factor_ref1/Estimator/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor_ref1/Importance_aridity_no_inter_factor_ref1.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor_ref1/Estimators_model_aridity_no_inter_factor_ref1.csv"),sep=";")
-
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  Closer_to_normality(.)
-d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-  apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-d_data=Perform_PCA_spatial_struc(d_data)
-d_data$Grazing=as.factor(d_data$Grazing)
-save=d_data
-
-
-
-boot_function_lm_graz = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2:4,1])
-}
-boot_function_lm_arid = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2,1])
-}
-
-grazing_intensity="all"
-for (with_interaction in c(T,F)){
-  
-  d_slope=tibble()
-  
-  for (k in c("perim_area_scaling","fmax_psd","PL_expo",
-              "core_area_land","core_area",
-              "flow_length","PLR","KS_dist","Shape_metric")){
-    
-    #for each we plot the slope against the partial residuals with and without cover
-    
-    if (k !="rho_p"){
-      
-      d_data_out=read.table(paste0("../Data/Linear_models_factor_ref1/Keep_data/Data_",k,"_TRUE_aridity_",
-                                   ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-      model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref1/Keep_models/Mod_",k,"_TRUE_aridity_",
-                                    ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-      
-      d_data_out$Grazing = as.factor(d_data_out$Grazing)
-      d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "1")
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","2","3"),
-                           Stat=k,Driver="Grazing"
-                    ))
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","2","3"),
-                           Stat=k,Driver="Aridity"
-                    ))
-    }
-    
-    d_data_out=read.table(paste0("../Data/Linear_models_factor_ref1/Keep_data/Data_",k,"_FALSE_aridity_",
-                                 ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-    model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref1/Keep_models/Mod_",k,"_FALSE_aridity_",
-                                  ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-    
-    d_data_out$Grazing = as.factor(d_data_out$Grazing)
-    d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "1")
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","2","3"),
-                         Stat=k,Driver="Grazing"
-                  ))
-    
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","2","3"),
-                         Stat=k,Driver="Aridity"
-                  ))
-  }
-  write.table(d_slope,paste0("../Data/Linear_models_factor_ref1/Slope_partial_residuals_aridity",
-                             ifelse(with_interaction,"","_no_inter"),
-                             "_ref1.csv"),sep=";")
-  
-}
-
-## >> 2) Changing to grazing intensity 2 ----
-dir.create("./Linear_models_factor_ref2",showWarnings = F)
-dir.create("./Linear_models_factor_ref2/Importance",showWarnings = F)
-dir.create("./Linear_models_factor_ref2/Estimator",showWarnings = F)
-dir.create("./Linear_models_factor_ref2/Keep_data",showWarnings = F)
-dir.create("./Linear_models_factor_ref2/Keep_models",showWarnings = F)
-
-Run_model_importance_aridity_no_inter=function(id){
-  
-  list_mod=rbind(expand.grid(with_cover=c(T,F),
-                             Stats=c("perim_area_scaling","fmax_psd","PL_expo",
-                                     "core_area_land","core_area","flow_length","PLR","KS_dist","Shape_metric")))
-  
-  d_all=d_all2=tibble()#for keeping all information
-  
-  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-    Closer_to_normality(.)
-  
-  d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-    apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-  
-  d_data=Perform_PCA_spatial_struc(d_data)
-  
-  stat=list_mod$Stats[id]
-  
-  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
-  
-  with_cover=list_mod$with_cover[id]
-  
-  if (with_cover){
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + rho_p + Type_veg 
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-    
-  } else{
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + Type_veg
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-  }
-  
-  save=d_data_mod
-  grazing_intensity='all'
-  d_data_mod=save
-  
-  d_data_mod$Grazing=as.factor(d_data_mod$Grazing)
-  d_data_mod$Grazing = relevel(d_data_mod$Grazing,ref = "2")
-  
-  model_spa_stat  = lmer(formula_mod, d_data_mod,
-                         na.action = na.fail ,REML ="FALSE")
-  
-  #we remove potential outliers
-  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-  d_data_out = rm.outliers$data
-  
-  #saving data
-  write.table(d_data_out,paste0("../Data/Linear_models_factor_ref2/Keep_data/Data_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"))
-  
-  model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                        na.action = na.fail,REML ="FALSE")
-  
-  # #do some model selection
-  select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                        Long_cos & Long_sin & Lattitude &
-                        dc(Woody & Grazing, Woody : Grazing) &
-                        dc(Aridity & Grazing, Aridity : Grazing) &
-                        dc(rho_p & Grazing, rho_p : Grazing) &
-                        dc(Org_C_v & Grazing, Org_C_v : Grazing) &
-                        dc(Sand  & Grazing, Sand  : Grazing) &
-                        dc(Type_veg & Grazing, Type_veg : Grazing),
-                      extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                              R2c=function(x) r.squaredGLMM(x)[2]),
-                      options(na.action = "na.fail") )
-  
-  if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-    
-    result_select=model_spa_stat
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    importance_mod=tibble(Interactions=1,
-                          Sand =1,
-                          Aridity=1,
-                          Org_C=1,
-                          Type_veg=1,
-                          Grazing=1,
-                          Cover=1,
-                          Woody=1)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                   With_cover=with_cover,
-                                   Grazing_intensity=grazing_intensity),
-                            importance_mod))
-    
-  }else{
-    
-    result_select=model.avg(select_model, subset = delta < 2)
-    
-    #Get the importance of each metric
-    importance_mod=sw(result_select)
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c)),
-                            Aggregate_importance(importance_mod,T))%>%
-                  add_column(., With_cover=with_cover,
-                             Grazing_intensity=grazing_intensity))
-    
-  }
-  
-  saveRDS(model_spa_stat,paste0("../Data/Linear_models_factor_ref2/Keep_models/Mod_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".rds"))
-  
-  summary_coef=confint(result_select)
-  
-  
-  #Merge in a df
-  d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                             q1=summary_coef[-1,1], 
-                             q3=summary_coef[-1,2],
-                             # pvalue=summary(result_select)$coefmat.full[-1,5],
-                             term=rownames(summary_coef)[-1],
-                             Stat=stat,
-                             R2m=mean(R2$R2m),
-                             R2c=mean(R2$R2c),
-                             Grazing_intensity=grazing_intensity)%>%
-                 add_column(., With_cover=with_cover))
-  
-  
-  
-  
-  
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor_ref2/Importance/Importance_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  write.table(d_all2,paste0("../Data/Linear_models_factor_ref2/Estimator/Estimators_model_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  
-}
-
-library(parallel)
-
-mclapply(1:18,Run_model_importance_aridity_no_inter,mc.cores = 18)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor_ref2/Importance",paste0("aridity_no_inter"))){
-  d=read.table(paste0("../Data/Linear_models_factor_ref2/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor_ref2/Estimator",paste0("aridity_no_inter"))){
-  d2=read.table(paste0("../Data/Linear_models_factor_ref2/Estimator/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor_ref2/Importance_aridity_no_inter_factor_ref2.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor_ref2/Estimators_model_aridity_no_inter_factor_ref2.csv"),sep=";")
-
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  Closer_to_normality(.)
-d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-  apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-d_data=Perform_PCA_spatial_struc(d_data)
-d_data$Grazing=as.factor(d_data$Grazing)
-save=d_data
-
-
-
-boot_function_lm_graz = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2:4,1])
-}
-boot_function_lm_arid = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2,1])
-}
-
-grazing_intensity="all"
-for (with_interaction in c(T,F)){
-  
-  d_slope=tibble()
-  
-  for (k in c("perim_area_scaling","fmax_psd","PL_expo",
-              "core_area_land","core_area",
-              "flow_length","PLR","KS_dist","Shape_metric")){
-    
-    #for each we plot the slope against the partial residuals with and without cover
-    
-    if (k !="rho_p"){
-      
-      d_data_out=read.table(paste0("../Data/Linear_models_factor_ref2/Keep_data/Data_",k,"_TRUE_aridity_",
-                                   ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-      model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref2/Keep_models/Mod_",k,"_TRUE_aridity_",
-                                    ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-      
-      d_data_out$Grazing = as.factor(d_data_out$Grazing)
-      d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "2")
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","1","3"),
-                           Stat=k,Driver="Grazing"
-                    ))
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","1","3"),
-                           Stat=k,Driver="Aridity"
-                    ))
-    }
-    
-    d_data_out=read.table(paste0("../Data/Linear_models_factor_ref2/Keep_data/Data_",k,"_FALSE_aridity_",
-                                 ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-    model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref2/Keep_models/Mod_",k,"_FALSE_aridity_",
-                                  ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-    
-    d_data_out$Grazing = as.factor(d_data_out$Grazing)
-    d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "2")
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","1","3"),
-                         Stat=k,Driver="Grazing"
-                  ))
-    
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","1","3"),
-                         Stat=k,Driver="Aridity"
-                  ))
-  }
-  write.table(d_slope,paste0("../Data/Linear_models_factor_ref2/Slope_partial_residuals_aridity",
-                             ifelse(with_interaction,"","_no_inter"),
-                             "_ref2.csv"),sep=";")
-  
-}
-
-
-## >> 3) Changing to grazing intensity 3 ----
-dir.create("./Linear_models_factor_ref3",showWarnings = F)
-dir.create("./Linear_models_factor_ref3/Importance",showWarnings = F)
-dir.create("./Linear_models_factor_ref3/Estimator",showWarnings = F)
-dir.create("./Linear_models_factor_ref3/Keep_data",showWarnings = F)
-dir.create("./Linear_models_factor_ref3/Keep_models",showWarnings = F)
-
-Run_model_importance_aridity_no_inter=function(id){
-  
-  list_mod=rbind(expand.grid(with_cover=c(T,F),
-                             Stats=c("perim_area_scaling","fmax_psd","PL_expo",
-                                     "core_area_land","core_area","flow_length","PLR","KS_dist","Shape_metric")))
-  
-  d_all=d_all2=tibble()#for keeping all information
-  
-  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-    Closer_to_normality(.)
-  
-  d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-    apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-  
-  d_data=Perform_PCA_spatial_struc(d_data)
-  
-  stat=list_mod$Stats[id]
-  
-  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
-  
-  with_cover=list_mod$with_cover[id]
-  
-  if (with_cover){
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + rho_p + Type_veg 
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-    
-  } else{
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing 
-      + Type_veg
-      + Sand + Org_C_v 
-      + (1|Site_ID)")))
-  }
-  
-  save=d_data_mod
-  grazing_intensity='all'
-  d_data_mod=save
-  
-  d_data_mod$Grazing=as.factor(d_data_mod$Grazing)
-  d_data_mod$Grazing = relevel(d_data_mod$Grazing,ref = "3")
-  
-  model_spa_stat  = lmer(formula_mod, d_data_mod,
-                         na.action = na.fail ,REML ="FALSE")
-  
-  #we remove potential outliers
-  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-  d_data_out = rm.outliers$data
-  
-  #saving data
-  write.table(d_data_out,paste0("../Data/Linear_models_factor_ref2/Keep_data/Data_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".csv"))
-  
-  model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                        na.action = na.fail,REML ="FALSE")
-  
-  # #do some model selection
-  select_model=dredge(model_spa_stat, subset = ~ Slope & Elevation &
-                        Long_cos & Long_sin & Lattitude &
-                        dc(Woody & Grazing, Woody : Grazing) &
-                        dc(Aridity & Grazing, Aridity : Grazing) &
-                        dc(rho_p & Grazing, rho_p : Grazing) &
-                        dc(Org_C_v & Grazing, Org_C_v : Grazing) &
-                        dc(Sand  & Grazing, Sand  : Grazing) &
-                        dc(Type_veg & Grazing, Type_veg : Grazing),
-                      extra=c(R2m=function(x) r.squaredGLMM(x)[1],
-                              R2c=function(x) r.squaredGLMM(x)[2]),
-                      options(na.action = "na.fail") )
-  
-  if (dim(select_model%>%filter(., delta<2))[1]==1){ #one model
-    
-    result_select=model_spa_stat
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    importance_mod=tibble(Interactions=1,
-                          Sand =1,
-                          Aridity=1,
-                          Org_C=1,
-                          Type_veg=1,
-                          Grazing=1,
-                          Cover=1,
-                          Woody=1)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c),
-                                   With_cover=with_cover,
-                                   Grazing_intensity=grazing_intensity),
-                            importance_mod))
-    
-  }else{
-    
-    result_select=model.avg(select_model, subset = delta < 2)
-    
-    #Get the importance of each metric
-    importance_mod=sw(result_select)
-    R2=select_model%>%filter(., AICc<min(AICc)+2)
-    
-    d_all=rbind(d_all,cbind(tibble(Sp_stat=stat,
-                                   N_outliers=rm.outliers$n.removed,
-                                   R2m=mean(R2$R2m),R2C=mean(R2$R2c)),
-                            Aggregate_importance(importance_mod,T))%>%
-                  add_column(., With_cover=with_cover,
-                             Grazing_intensity=grazing_intensity))
-    
-  }
-  
-  saveRDS(model_spa_stat,paste0("../Data/Linear_models_factor_ref3/Keep_models/Mod_",stat,"_",with_cover,"_aridity_no_inter_",grazing_intensity,".rds"))
-  
-  summary_coef=confint(result_select)
-  
-  
-  #Merge in a df
-  d_all2=rbind(d_all2,tibble(Median=confint(result_select,level = 1e-9)[-1,1],
-                             q1=summary_coef[-1,1], 
-                             q3=summary_coef[-1,2],
-                             # pvalue=summary(result_select)$coefmat.full[-1,5],
-                             term=rownames(summary_coef)[-1],
-                             Stat=stat,
-                             R2m=mean(R2$R2m),
-                             R2c=mean(R2$R2c),
-                             Grazing_intensity=grazing_intensity)%>%
-                 add_column(., With_cover=with_cover))
-  
-  
-  
-  
-  
-  #Saving each DF
-  write.table(d_all,paste0("../Data/Linear_models_factor_ref3/Importance/Importance_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  write.table(d_all2,paste0("../Data/Linear_models_factor_ref3/Estimator/Estimators_model_",stat,"_",with_cover,"_aridity_no_inter.csv"),sep=";")
-  
-}
-
-library(parallel)
-
-mclapply(1:18,Run_model_importance_aridity_no_inter,mc.cores = 18)
-
-d_all=d_all2=tibble()
-for (k in list.files("../Data/Linear_models_factor_ref3/Importance",paste0("aridity_no_inter"))){
-  d=read.table(paste0("../Data/Linear_models_factor_ref3/Importance/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all=rbind(d_all,d)
-  }
-}
-for (k in list.files("../Data/Linear_models_factor_ref3/Estimator",paste0("aridity_no_inter"))){
-  d2=read.table(paste0("../Data/Linear_models_factor_ref3/Estimator/",k),sep=";")
-  if (nrow(d)!=0){
-    d_all2=rbind(d_all2,d2)
-  }
-}
-write.table(d_all,paste0("../Data/Linear_models_factor_ref3/Importance_aridity_no_inter_factor_ref2.csv"),sep=";")
-write.table(d_all2,paste0("../Data/Linear_models_factor_ref3/Estimators_model_aridity_no_inter_factor_ref2.csv"),sep=";")
-
-
-d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-  Closer_to_normality(.)
-d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))] = 
-  apply(d_data[,c(1,9:29,38,40:44,47:80,82:ncol(d_data))],2,z_tranform)
-d_data=Perform_PCA_spatial_struc(d_data)
-d_data$Grazing=as.factor(d_data$Grazing)
-save=d_data
-
-
-
-boot_function_lm_graz = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2:4,1])
-}
-boot_function_lm_arid = function(formula, data, indices) {
-  d = data[indices,] 
-  fit = lm(formula, data=d) 
-  return(summary(fit)$coefficient[2,1])
-}
-
-grazing_intensity="all"
-for (with_interaction in c(T,F)){
-  
-  d_slope=tibble()
-  
-  for (k in c("perim_area_scaling","fmax_psd","PL_expo",
-              "core_area_land","core_area",
-              "flow_length","PLR","KS_dist","Shape_metric")){
-    
-    #for each we plot the slope against the partial residuals with and without cover
-    
-    if (k !="rho_p"){
-      
-      d_data_out=read.table(paste0("../Data/Linear_models_factor_ref3/Keep_data/Data_",k,"_TRUE_aridity_",
-                                   ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-      model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref3/Keep_models/Mod_",k,"_TRUE_aridity_",
-                                    ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-      
-      d_data_out$Grazing = as.factor(d_data_out$Grazing)
-      d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "3")
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","1","2"),
-                           Stat=k,Driver="Grazing"
-                    ))
-      
-      resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-      
-      mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-      
-      d_slope=rbind(d_slope,
-                    tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                           q2=apply((mod_cov$t),2,median),
-                           q1=apply(mod_cov$t,2,quantile,.025),
-                           q3=apply(mod_cov$t,2,quantile,.975),
-                           With_cover=T,Grazing_intensity=grazing_intensity,
-                           ID_grazing=c("0","1","2"),
-                           Stat=k,Driver="Aridity"
-                    ))
-    }
-    
-    d_data_out=read.table(paste0("../Data/Linear_models_factor_ref3/Keep_data/Data_",k,"_FALSE_aridity_",
-                                 ifelse(with_interaction,"","no_inter_"),grazing_intensity,".csv"),sep=" ")
-    model_spa_stat=readRDS(paste0("../Data/Linear_models_factor_ref3/Keep_models/Mod_",k,"_FALSE_aridity_",
-                                  ifelse(with_interaction,"","no_inter_"),grazing_intensity,".rds"))
-    
-    d_data_out$Grazing = as.factor(d_data_out$Grazing)
-    d_data_out$Grazing = relevel(d_data_out$Grazing,ref = "3")
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Grazing",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_graz, R=1000, formula=visregRes~Grazing)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","1","2"),
-                         Stat=k,Driver="Grazing"
-                  ))
-    
-    
-    resid_mod=visreg::visreg(fit = model_spa_stat,xvar="Aridity",plot=F) 
-    
-    mod_cov = boot(data=resid_mod$res, statistic=boot_function_lm_arid, R=1000, formula=visregRes~Aridity)
-    
-    d_slope=rbind(d_slope,
-                  tibble(pval=apply(mod_cov$t,2,twoside_pvalue),
-                         q2=apply((mod_cov$t),2,median),
-                         q1=apply(mod_cov$t,2,quantile,.025),
-                         q3=apply(mod_cov$t,2,quantile,.975),
-                         With_cover=F,Grazing_intensity=grazing_intensity,
-                         ID_grazing=c("0","1","2"),
-                         Stat=k,Driver="Aridity"
-                  ))
-  }
-  write.table(d_slope,paste0("../Data/Linear_models_factor_ref3/Slope_partial_residuals_aridity",
-                             ifelse(with_interaction,"","_no_inter"),
-                             "_ref2.csv"),sep=";")
-  
-}
-
-
-
-# ---------------------- Step 6: Using the Schneider model with different spatial structures ----
-
+# ---------------------- Step 5: Using the Schneider model with different spatial structures ----
 ## >> 1) Making simulations ----
 library(chouca)
 
@@ -3683,7 +2168,7 @@ for (k in 1:50){
 }
 write.table(d,"../Data/Simulations/All_simulations_PA.csv",sep=";")
 
-# ---------------------- Step 7: Sensitivity spatial resolution ----
+# ---------------------- Step 6: Sensitivity spatial resolution ----
 ## >> 1) Running mixed-effect model ----
 
 Run_model_importance_aridity=function(id){
@@ -3708,14 +2193,14 @@ Run_model_importance_aridity=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing + Resolution
+      + Aridity + Grazing + Resolution + Herbivores
       + Aridity*Grazing 
       + rho_p + Type_veg 
       + Sand + Org_C_v 
@@ -3724,7 +2209,7 @@ Run_model_importance_aridity=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing + Resolution
+      + Aridity + Grazing + Resolution + Herbivores
       + Aridity*Grazing 
       + Type_veg 
       + Sand + Org_C_v 
@@ -3873,14 +2358,14 @@ Run_model_importance_aridity_no_inter=function(id){
   stat=list_mod$Stats[id]
   
   d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    filter(., !is.na(value))
+    filter(., !is.na(value),!is.na(Herbivores))
   
   with_cover=list_mod$with_cover[id]
   
   if (with_cover){
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing + Resolution
+      + Aridity + Grazing + Resolution + Herbivores 
       + rho_p + Type_veg 
       + Sand + Org_C_v 
       + (1|Site_ID)")))
@@ -3888,7 +2373,7 @@ Run_model_importance_aridity_no_inter=function(id){
   } else{
     
     formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Aridity + Grazing + Resolution
+      + Aridity + Grazing + Resolution + Herbivores
       + Type_veg
       + Sand + Org_C_v 
       + (1|Site_ID)")))

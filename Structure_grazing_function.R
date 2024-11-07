@@ -5,9 +5,9 @@ x = c("tidyverse", "ggpubr", "latex2exp", "reshape2", "simecol","ggeffects","nlm
       "png","jpeg","landscapemetrics","lme4","lmeresampler","lmerTest","GGally","MuMIn","multcompView",
       "LMERConvenienceFunctions","semEff","piecewiseSEM","qgraph","car","spdep","ParBayesianOptimization",
       "ggpattern","ggpmisc","ggpp","gradientForest","extendedForest","rfPermute","A3",
-      "psych","emmeans","vegan","adiv","ade4","FD","ggh4x","deSolve")
+      "psych","emmeans","vegan","adiv","ade4","FD","ggh4x","deSolve","plsRglm","caret")
 
-source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")
+# source("https://gist.githubusercontent.com/benmarwick/2a1bb0133ff568cbe28d/raw/fb53bd97121f7f9ce947837ef1a4c65a73bffb3f/geom_flat_violin.R")
 
 #loading the packages
 lapply(x, require, character.only = TRUE)
@@ -721,9 +721,12 @@ Closer_to_normality_traits=function(df){
            LL=log(LL+.1),
            SLA=sqrt(SLA),
            MaxLS=log(MaxLS),
-           Maxvolume=log(Maxvolume),
+           # Maxvolume=log(Maxvolume),
            LA=log(LA),
-           Phenolics=sqrt(Phenolics)
+           Phenolics=sqrt(Phenolics),
+           LNC=sqrt(LNC),
+           
+           
     )
   return(df)
 }
@@ -733,38 +736,7 @@ Closer_to_normality_CWM=function(df){
   
   return(df%>%
            mutate(., 
-                  CWM_LA=log(CWM_LA),
-                  CWM_LL=log(CWM_LL+1),
-                  CWM_MaxH=log(CWM_MaxH+1),
                   CWM_MaxLS=log(CWM_MaxLS+1),
-                  CWMvar_MaxLS=log(CWMvar_MaxLS+1),
-                  #CWMKurt_MaxLS=log(CWMKurt_MaxLS+1),
-                  CWM_Maxvol=log(CWM_Maxvol),
-                  Div_alpha_mean=sqrt(Div_alpha_mean),
-                  Div_alpha_var=sqrt(Div_alpha_var),
-                  Div_beta_redundancy_var=sqrt(Div_beta_redundancy_var),
-                  Div_Species_similarity_bar=log(Div_Species_similarity_bar),
-                  Div_Dissimilarity_gap_bar=sqrt(Div_Dissimilarity_gap_bar),
-                  QWM_LA=log(QWM_LA),
-                  QWM_LL=log(QWM_LL+.1),
-                  QWM_MaxH=log(QWM_MaxH),
-                  QWM_MaxLS=log(QWM_MaxLS),
-                  QWM_Maxvol=log(QWM_Maxvol),
-                  QWM_SLA=sqrt(QWM_SLA),
-                  QWM_Phenol=sqrt(QWM_Phenol),
-                  QWV_LA=log(QWV_LA),
-                  QWV_LL=log(QWV_LL+.1),
-                  QWV_MaxH=log(QWV_MaxH),
-                  QWV_MaxLS=log(QWV_MaxLS),
-                  QWV_Maxvol=log(QWV_Maxvol),
-                  QWV_SLA=sqrt(QWV_SLA),
-                  QWV_PC1=log(QWV_PC1+.1),
-                  QWV_PC2=log(QWV_PC2+.1),
-                  QWV_PC3=log(QWV_PC3+.1),
-                  FD_PC1=log(FD_PC1+.01),
-                  FD_PC2=log(FD_PC2+.01),
-                  QWV_Phenol=sqrt(QWV_Phenol)
-                  
            ))
 }
 
@@ -962,57 +934,10 @@ Perform_PCA_spatial_struc=function(df,plot=F){
   
 }
 
-Get_data_without_outliers=function(stat,with_cover=T){
-  
-  d_data=read.table("../Data/Spatial_structure_grazing.csv",sep=";")%>%
-    Closer_to_normality(.)
-  
-  d_data[,c(1,9:29,38,40:44,47:80,82:83)] = 
-    apply(d_data[,c(1,9:29,38,40:44,47:80,82:83)],2,z_tranform)
-  
-  d_data=Perform_PCA_spatial_struc(d_data)
-  
-  
-  d_data_mod=d_data%>%melt(., measure.vars=stat)%>%
-    dplyr::filter(., !is.na(value))
-  
-  
-  if (with_cover){
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
-      + Woody + Woody*Grazing
-      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
-      + rho_p + rho_p*Grazing + Type_veg + Type_veg*Grazing
-      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
-      + (1|Site_ID)")))
-    
-  } else{
-    
-    formula_mod=formula(formula_(paste("value ~ Long_cos + Long_sin + Lattitude + Slope + Elevation 
-      + Clim1 + Clim2 + Clim3 + Clim4 + Grazing 
-      + Woody + Woody*Grazing
-      + Clim1*Grazing + Clim2*Grazing + Clim3*Grazing + Clim4*Grazing  
-      + Type_veg + Type_veg*Grazing
-      + Sand + Sand*Grazing + Org_C + Org_C*Grazing
-      + (1|Site_ID)")))
-  }
-  
-  model_spa_stat  = lmer(formula_mod, d_data_mod,
-                         na.action = na.fail ,REML ="FALSE")
-  
-  #we remove potential outliers
-  rm.outliers = romr.fnc(model_spa_stat, d_data_mod, trim=2.5)
-  d_data_out = rm.outliers$data
-  
-  model_spa_stat = lmer(formula_mod, data = d_data_out, 
-                        na.action = na.fail,REML ="FALSE")
-  return(d_data_out)
-}
 
 Filter_relevant_stats=function(df){
   return(df%>%dplyr::filter(., Stat %in% c("PL_expo","fmax_psd","flow_length",
-                                    "moran_I","core_area",#"Small_patches",
+                                    "moran_I","core_area","Small_patches",
                                     "mean_psd")))
 }
 
@@ -1030,7 +955,7 @@ Rename_spatial_statistics=function(df){
                                         "fractal_dim"="Fractal dimension",
                                         "perim_area_scaling"="Fractal scaling area, perim.",
                                         "PLR"="PLR",
-                                        "Small_patches"="Number of isolated individuals",
+                                        "Small_patches"="Number of smallest patches",
                                         "moran_I"="Spatial autocorrelation of vege.",
                                         "KS_dist"="Distance to null expect.",
                                         "rho_p"="Vegetation cover",
@@ -1151,8 +1076,8 @@ Get_CWT_traits=function(abundance,traits_site){
   #then compute CWM at the quadrat level
   if ("PC1_traits" %in% colnames(traits_site)){
     CWM_quadrat=melt(traits_site, 
-                     measure.vars=c("LL","SLA","LDMC","LA","MaxH","MaxLS",
-                                    "Maxvolume","Phenolics","LNC","LCC",
+                     measure.vars=c("LL","SLA","LDMC","LA","MaxH","MaxLS","d15N","d13C",
+                                    "Phenolics","LNC","LCC",#"Maxvolume",
                                     "PC1_traits","PC2_traits","PC3_traits","PC4_traits"))%>%#for each trait 
       dplyr::group_by(.,Country,Site,Plot,variable)%>% 
       dplyr::summarise(., .groups = "keep",
@@ -1161,8 +1086,9 @@ Get_CWT_traits=function(abundance,traits_site){
     )
   }else{
     CWM_quadrat=melt(traits_site, 
-                     measure.vars=c("LL","SLA","LDMC","LA","MaxH","MaxLS",
-                                    "Maxvolume","Phenolics","LNC","LCC"))%>%#for each trait 
+                     measure.vars=c("LL","SLA","LDMC","LA","MaxH","MaxLS","d15N","d13C",
+                                    #"Maxvolume",
+                                    "Phenolics","LNC","LCC",))%>%#for each trait 
       dplyr::group_by(.,Country,Site,Plot,variable)%>% 
       dplyr::summarise(., .groups = "keep",
                        CWM = sum(Cover*value,na.rm = T), # community weighted mean
@@ -1198,11 +1124,30 @@ Get_CWT_life_forms=function(abundance,traits_site){
 
   return(traits_site%>% 
            dplyr::group_by(.,Country,Site,Plot)%>% 
-           dplyr::do(., Life_form_quadrat(.$Life_form,.$Cover))
+           dplyr::do(., Diversity_community_levelLife_form_quadrat(.$Life_form,.$Cover))
   )
 }
 
-Get_diversity_indices=function(abundance_mat,traits_site){
+Get_diversity_indices=function(abundance_mat,traits_site,id_traits=c(8:18)){
+  
+  null_tibble=tibble(alpha_mean=1e9,alpha_var=1e9,alpha_mean_star=1e9,alpha_var_star=1e9,
+                     beta_plot_composition=1e9,
+                     Functional_dissimilarity_bar=1e9,Species_similarity_bar=1e9,Dissimilarity_gap_bar=1e9,beta_uniqueness_bar=1e9,
+                     beta_redundancy_bar=1e9,Functional_dissimilarity_var=1e9,Species_similarity_var=1e9,Dissimilarity_gap_var=1e9,
+                     beta_uniqueness_var=1e9,beta_redundancy_var=1e9,
+                     Rao_beta=1e9,Rao_alpha=1e9,
+                     Rao_Q_weighted_mean=1e9,Rao_Q_non_weighted_mean=1e9,
+                     F_Richness_mean=1e9,
+                     F_eveness_mean_weighted=1e9,F_Diversity_mean_weighted=1e9,F_Dispersion_mean_weighted=1e9,
+                     F_eveness_mean_non_weighted=1e9,F_Diversity_mean_non_weighted=1e9,F_Dispersion_mean_non_weighted=1e9,
+                     Rao_Q_weighted_var=1e9,Rao_Q_non_weighted_var=1e9,
+                     F_Richness_var=1e9,F_eveness_var_weighted=1e9,
+                     F_Diversity_var_weighted=1e9,F_Dispersion_var_weighted=1e9,
+                     F_eveness_var_non_weighted=1e9,F_Diversity_var_non_weighted=1e9,
+                     F_Dispersion_var_non_weighted=1e9
+  )
+  
+  
   
   abundance_mat=apply(abundance_mat,2,function(x){return(x/sum(x,na.rm = T))}) #scaling into proportion
   
@@ -1211,6 +1156,12 @@ Get_diversity_indices=function(abundance_mat,traits_site){
   }
   
   if (any(is.na(rowSums(abundance_mat)))){ 
+    abundance_mat=abundance_mat[-which(is.na(rowSums(abundance_mat))),] 
+  }
+  if (any(rowSums(abundance_mat)==0)){ 
+    abundance_mat=abundance_mat[-which(rowSums(abundance_mat)==0),] 
+  }
+  if (any(colSums(abundance_mat)==0)){ 
     abundance_mat=abundance_mat[-which(colSums(abundance_mat)==0),] 
   }
   
@@ -1219,131 +1170,381 @@ Get_diversity_indices=function(abundance_mat,traits_site){
                Name_sp=paste0(.$Genus," ",.$Species))%>%
     dplyr::filter(., Name_sp %in% rownames(abundance_mat))%>%
     dplyr::arrange(., Name_sp)%>% #sorting the tibble to match abundances in the abundance vector
-    dplyr::filter(., !is.na(LL),!is.na(Phenolics),!is.na(MaxH))%>%
     as.data.frame(.)
   
-  if (nrow(abundance_mat) != nrow(traits_site)){ #meaning that a species has no recorded trait
-    abundance_mat=abundance_mat[-which(rownames(abundance_mat) %!in% traits_site$Name_sp),] #we remove such species
-    if (is.null(dim(abundance_mat))){#only one species
-      abundance_mat=(abundance_mat>0)+0
-    }else{
-      if (any(colSums(abundance_mat)==0)){ #in case we remove a species that was alone
-        abundance_mat=abundance_mat[,-which(colSums(abundance_mat)==0)]
-      }
-      abundance_mat=apply(abundance_mat,2,function(x){return(x/sum(x,na.rm = T))}) # and rescale the abundances
-    }
-  }
+  #order matrix abundance
+  abundance_mat=abundance_mat[order(rownames(abundance_mat)),]
   
   if (!is.null(dim(abundance_mat))){#only one species
     
+    if (nrow(abundance_mat) > nrow(traits_site)){ #meaning that a species has no recorded trait
+      abundance_mat=abundance_mat[-which(rownames(abundance_mat) %!in% traits_site$Name_sp),] #we remove such species
+      if (is.null(dim(abundance_mat))){#only one species
+        abundance_mat=(abundance_mat>0)+0
+      }else{
+        if (any(colSums(abundance_mat)==0)){ #in case we remove a species that was alone
+          abundance_mat=abundance_mat[,-which(colSums(abundance_mat)==0)]
+        }
+        abundance_mat=apply(abundance_mat,2,function(x){return(x/sum(x,na.rm = T))}) # and rescale the abundances
+      }
+    }
+    
+    if (nrow(abundance_mat) < nrow(traits_site)){ #meaning that a species has no recorded abundance
+      traits_site=traits_site[-which(traits_site$Name_sp  %!in% rownames(abundance_mat)),] #we remove such species
+    }
+    
+    #Removing species without any measured traits
+    if (any(rowSums(traits_site[,id_traits],na.rm = T)==0)){
+      if (sum(rowSums(traits_site[,id_traits],na.rm = T)==0)!=nrow(traits_site)){
+        which_sp=which(rowSums(traits_site[,id_traits],na.rm = T)==0)
+        traits_site=traits_site[-which_sp,]
+        abundance_mat=abundance_mat[-which_sp,]
+        
+        if (class(abundance_mat)[1]!="numeric"){
+          abundance_mat=apply(abundance_mat,2,function(x){return(x/sum(x,na.rm = T))}) #rescaling
+          
+          if (any(apply(abundance_mat,2,function(x){return(sum(x,na.rm = T))})==0)){ #meaninig that we have removed species that were alone in a quadrat
+            which_quadrats=which(apply(abundance_mat,2,function(x){return(sum(x,na.rm = T))})==0)
+            abundance_mat=abundance_mat[,-which_quadrats]
+          }
+        }
+      }
+    }
+    
+
     #Building a distance matrix from plant traits
     rownames(traits_site)=traits_site$Name_sp
-    scale_traits=as.data.frame(scale(traits_site[,c(20:23)]))
+    scale_traits=as.data.frame(scale(traits_site[,id_traits]))
     Dist_func = dist(scale_traits)
-    Dist_func = Dist_func/max(Dist_func)
+    Dist_func = Dist_func/max(Dist_func,na.rm = T)
     
-    #Then, alpha functional diversity for each quadrat
-    alpha_div=(FPdivparam(t(abundance_mat), Dist_func)) #Using the \alpha K index of Pavoine and Ricotta 2021
-    alpha_div_bar=mean(alpha_div[,1],na.rm=T)
-    alpha_div_var=var(alpha_div[,1],na.rm=T)
+    if (any(is.na(Dist_func))){
+      #this means that at least two species have non common traits, 
+      #we remove one by one the one having the least number of traits until there is not NA issue
+      #this is generally the least abundant species
+      
+      
+      while(any(is.na(Dist_func))){
+        n_NA_species=sort(apply(as.matrix(Dist_func),2,function(x){return(sum(is.na(x)))}),decreasing = T)
+        abundance_mat=abundance_mat[-which(traits_site$Complete_name==names(n_NA_species)[1]),]
+        traits_site=traits_site[-which(traits_site$Complete_name==names(n_NA_species)[1]),]
+        scale_traits=as.data.frame(scale(traits_site[,id_traits]))
+        Dist_func = dist(scale_traits)
+        Dist_func = Dist_func/max(Dist_func,na.rm = T)
+      }
+    }
     
-    alpha_div_star=(FPdivparam(t(abundance_mat), Dist_func)) #Using the\alpha K* index of Pavoine and Ricotta 2021
-    alpha_div_star_bar=mean(alpha_div[,1],na.rm=T)
-    alpha_div_star_var=var(alpha_div[,1],na.rm=T)
-    
-    
-    #Then beta diversity in composition
-    beta_plot_composition=dsimcom(t(abundance_mat),method=2)
-    diag(beta_plot_composition)=NA
-    beta_plot_composition=mean(beta_plot_composition,na.rm=T)
-    
-    
-    #Then functional beta diversity 
-    beta_plot=betaUniqueness(t(abundance_mat), Dist_func)
-    
-    D_KG=beta_plot$DKG  # Pairwise functional dissimilarities between plots 
-    diag(D_KG)=NA
-    
-    S_BC=1-beta_plot$DR # Pairwise species similarity between plots of 
-    diag(S_BC)=NA
-    
-    R_beta = beta_plot$DR- beta_plot$DKG # Pairwise dissimilarity gap between plots
-    diag(R_beta)=NA
-    
-    beta_uniqueness = beta_plot$betaUniqueness # Pairwise beta uniqueness between plots
-    diag(beta_uniqueness)=NA
-    
-    beta_redundancy = beta_plot$betaRedundancy # Pairwise beta redundancy between plots
-    diag(beta_redundancy)=NA
-    
-    D_KG_bar = mean(D_KG,na.rm=T)  #averaging
-    S_BC_bar = mean(S_BC,na.rm=T) #averaging
-    R_beta_bar = mean(R_beta,na.rm=T) #averaging
-    beta_uniqueness_bar = mean(beta_uniqueness,na.rm=T) #averaging
-    beta_redundancy_bar = mean(beta_redundancy,na.rm=T) #averaging
-    
-    D_KG_var = var(as.numeric(D_KG),na.rm = T) #variance
-    S_BC_var = var(as.numeric(S_BC),na.rm = T) #variance
-    R_beta_var = var(as.numeric(R_beta),na.rm = T) #variance
-    beta_uniqueness_var = var(as.numeric(beta_uniqueness),na.rm = T) #variance
-    beta_redundancy_var = var(as.numeric(beta_redundancy),na.rm = T) #variance
-    
-    Rao_number=EqRao(t(abundance_mat), Dist_func, formula = "QE",option = "eq")
-    Rao_beta  = Rao_number[which(rownames(Rao_number)=="beta"),1]
-    Rao_alpha = Rao_number[which(rownames(Rao_number)=="alpha"),1]
-    
-    # dbFD(tussock$trait, tussock$abun, corr = "lingoes")
-    
-    return(tibble(alpha_mean=alpha_div_bar,
-                  alpha_var=alpha_div_var,
-                  alpha_mean_star=alpha_div_star_bar,
-                  alpha_var_star=alpha_div_star_var,
-                  #
-                  beta_plot_composition=beta_plot_composition,
-                  #
-                  Functional_dissimilarity_bar=D_KG_bar,
-                  Species_similarity_bar=S_BC_bar,
-                  Dissimilarity_gap_bar=R_beta_bar,
-                  beta_uniqueness_bar=beta_uniqueness_bar,
-                  beta_redundancy_bar=beta_redundancy_bar,
-                  Functional_dissimilarity_var=D_KG_var,
-                  Species_similarity_var=S_BC_var,
-                  Dissimilarity_gap_var=R_beta_var,
-                  beta_uniqueness_var=beta_uniqueness_var,
-                  beta_redundancy_var=beta_redundancy_var,
-                  #
-                  Rao_beta=Rao_beta,
-                  Rao_alpha=Rao_alpha
-    ))
+    if (!is.null(dim(abundance_mat))){#only one species
+      abundance_mat=apply(abundance_mat,2,function(x){return(x/sum(x,na.rm = T))}) # and rescale the abundances
+      
+      if (any(apply(abundance_mat,2,function(x){return(sum(x,na.rm = T))})==0)){ #Double checking
+        which_quadrats=which(apply(abundance_mat,2,function(x){return(sum(x,na.rm = T))})==0)
+        abundance_mat=abundance_mat[,-which_quadrats]
+      }
+      
+      #Then, alpha functional diversity for each quadrat
+      alpha_div=(FPdivparam(t(abundance_mat), Dist_func)) #Using the \alpha K index of Pavoine and Ricotta 2021
+      alpha_div_bar=mean(alpha_div[,1],na.rm=T)
+      alpha_div_var=var(alpha_div[,1],na.rm=T)
+      
+      alpha_div_star=(FPdivparam(t(abundance_mat), Dist_func)) #Using the\alpha K* index of Pavoine and Ricotta 2021
+      alpha_div_star_bar=mean(alpha_div[,1],na.rm=T)
+      alpha_div_star_var=var(alpha_div[,1],na.rm=T)
+      
+      #Then beta diversity in composition
+      beta_plot_composition=dsimcom(t(abundance_mat),method=2)
+      diag(beta_plot_composition)=NA
+      beta_plot_composition=mean(beta_plot_composition,na.rm=T)
+      
+      #Then functional beta diversity 
+      # beta_plot=betaUniqueness(t(abundance_mat), Dist_func)
+      # 
+      # D_KG=beta_plot$DKG  # Pairwise functional dissimilarities between plots 
+      # diag(D_KG)=NA
+      # 
+      # S_BC=1-beta_plot$DR # Pairwise species similarity between plots of 
+      # diag(S_BC)=NA
+      # 
+      # R_beta = beta_plot$DR- beta_plot$DKG # Pairwise dissimilarity gap between plots
+      # diag(R_beta)=NA
+      # 
+      # beta_uniqueness = beta_plot$betaUniqueness # Pairwise beta uniqueness between plots
+      # diag(beta_uniqueness)=NA
+      # 
+      # beta_redundancy = beta_plot$betaRedundancy # Pairwise beta redundancy between plots
+      # diag(beta_redundancy)=NA
+      
+      D_KG_bar = NA  # mean(D_KG,na.rm=T)  #averaging
+      S_BC_bar = NA  # mean(S_BC,na.rm=T) #averaging
+      R_beta_bar = NA  # mean(R_beta,na.rm=T) #averaging
+      beta_uniqueness_bar = NA  # mean(beta_uniqueness,na.rm=T) #averaging
+      beta_redundancy_bar = NA  # mean(beta_redundancy,na.rm=T) #averaging
+      
+      D_KG_var = NA  # var(as.numeric(D_KG),na.rm = T) #variance
+      S_BC_var = NA  # var(as.numeric(S_BC),na.rm = T) #variance
+      R_beta_var = NA  # var(as.numeric(R_beta),na.rm = T) #variance
+      beta_uniqueness_var = NA  # var(as.numeric(beta_uniqueness),na.rm = T) #variance
+      beta_redundancy_var = NA  # var(as.numeric(beta_redundancy),na.rm = T) #variance
+      
+      
+      Rao_number=try(EqRao(t(abundance_mat), Dist_func, formula = "QE",option = "eq"),silent = T)
+      if (class(Rao_number)=="try-error"){
+        Rao_beta  = NA
+        Rao_alpha = NA
+      }else{
+        Rao_number=EqRao(t(abundance_mat), Dist_func, formula = "QE",option = "eq")
+        Rao_beta  = Rao_number[which(rownames(Rao_number)=="beta"),1]
+        Rao_alpha = Rao_number[which(rownames(Rao_number)=="alpha"),1]
+      }
+      
+      # Order species and check for names in the rows
+      rownames(traits_site)=paste0(traits_site$Genus," ",traits_site$Species)
+      if (any(colSums(traits_site[,id_traits],na.rm = T)==0)){ #meaning only NA values
+        id_traits=id_traits[-which(colSums(traits_site[,id_traits],na.rm = T)==0)]
+      }
+      traits_site=traits_site%>%dplyr::arrange(., Name_sp)
+      abundance_mat=abundance_mat[order(rownames(abundance_mat)),]
+      
+      
+      ## FUNCTIONAL DIV  
+      
+      #Functional diversity with FD, weighted by abundances
+      funct_div=try(dbFD(traits_site[,id_traits],t(abundance_mat),w.abun = T,messages = F),silent = T)
+      
+      if (class(funct_div)=="try-error"){
+        funct_div=try(dbFD(traits_site[,id_traits],t(abundance_mat),w.abun = T,messages = F,corr="cailliez"),silent = T)
+      }
+      if (class(funct_div)=="try-error"){
+        funct_div=list(
+          RaoQ=NA,
+          FRic=NA,
+          FEve=NA,
+          FDiv=NA,
+          FDis=NA
+        )
+      }
+      
+      if ("FDiv" %!in% names(funct_div)){
+        funct_div$FDiv=NA
+      }
+      
+      #Functional diversity with FD, nonweighted by abundances
+      
+      funct_div_non_weighted=try(dbFD(traits_site[,id_traits],t(abundance_mat),w.abun = F,messages = F),silent = T)
+      
+      if (class(funct_div_non_weighted)=="try-error"){
+        funct_div_non_weighted=try(dbFD(traits_site[,id_traits],t(abundance_mat),w.abun = F,messages = F,corr="cailliez"),silent = T)
+      }
+      if (class(funct_div_non_weighted)=="try-error"){
+        funct_div_non_weighted=list(
+          RaoQ=NA,
+          FRic=NA,
+          FEve=NA,
+          FDiv=NA,
+          FDis=NA
+        )
+      }
+      
+      if ("FDiv" %!in% names(funct_div_non_weighted)){
+        funct_div_non_weighted$FDiv=NA
+      }
+      
+      return(tibble(alpha_mean=alpha_div_bar,
+                    alpha_var=alpha_div_var,
+                    alpha_mean_star=alpha_div_star_bar,
+                    alpha_var_star=alpha_div_star_var,
+                    #
+                    beta_plot_composition=beta_plot_composition,
+                    #
+                    Functional_dissimilarity_bar=D_KG_bar,
+                    Species_similarity_bar=S_BC_bar,
+                    Dissimilarity_gap_bar=R_beta_bar,
+                    beta_uniqueness_bar=beta_uniqueness_bar,
+                    beta_redundancy_bar=beta_redundancy_bar,
+                    Functional_dissimilarity_var=D_KG_var,
+                    Species_similarity_var=S_BC_var,
+                    Dissimilarity_gap_var=R_beta_var,
+                    beta_uniqueness_var=beta_uniqueness_var,
+                    beta_redundancy_var=beta_redundancy_var,
+                    #
+                    Rao_beta=Rao_beta,
+                    Rao_alpha=Rao_alpha,
+                    #
+                    Rao_Q_weighted_mean=mean(funct_div$RaoQ,na.rm = T),
+                    Rao_Q_non_weighted_mean=mean(funct_div_non_weighted$RaoQ,na.rm = T),
+                    #
+                    F_Richness_mean=mean(funct_div$FRic,na.rm = T),
+                    #
+                    F_eveness_mean_weighted=mean(funct_div$FEve,na.rm = T),
+                    F_Diversity_mean_weighted=mean(funct_div$FDiv,na.rm = T),
+                    F_Dispersion_mean_weighted=mean(funct_div$FDis,na.rm = T),
+                    # non weighted
+                    F_eveness_mean_non_weighted=mean(funct_div_non_weighted$FEve,na.rm = T),
+                    F_Diversity_mean_non_weighted=mean(funct_div_non_weighted$FDiv,na.rm = T),
+                    F_Dispersion_mean_non_weighted=mean(funct_div_non_weighted$FDis,na.rm = T),
+                    #
+                    #
+                    #Same but with the variance
+                    Rao_Q_weighted_var=var(funct_div$RaoQ,na.rm = T),
+                    Rao_Q_non_weighted_var=var(funct_div_non_weighted$RaoQ,na.rm = T),
+                    #
+                    F_Richness_var=var(funct_div$FRic,na.rm = T),
+                    #
+                    F_eveness_var_weighted=var(funct_div$FEve,na.rm = T),
+                    F_Diversity_var_weighted=var(funct_div$FDiv,na.rm = T),
+                    F_Dispersion_var_weighted=var(funct_div$FDis,na.rm = T),
+                    # non weighted
+                    F_eveness_var_non_weighted=var(funct_div_non_weighted$FEve,na.rm = T),
+                    F_Diversity_var_non_weighted=var(funct_div_non_weighted$FDiv,na.rm = T),
+                    F_Dispersion_var_non_weighted=var(funct_div_non_weighted$FDis,na.rm = T)
+                    
+  
+      ))
+    }else{ #only one species
+      return(null_tibble)
+    }
   }else{ #only one species
-    
-    return(tibble(alpha_mean=1e9,
-                  alpha_var=1e9,
-                  alpha_mean_star=1e9,
-                  alpha_var_star=1e9,
-                  #
-                  beta_plot_composition=1e9,
-                  #
-                  Functional_dissimilarity_bar=1e9,
-                  Species_similarity_bar=1e9,
-                  Dissimilarity_gap_bar=1e9,
-                  beta_uniqueness_bar=1e9,
-                  beta_redundancy_bar=1e9,
-                  Functional_dissimilarity_var=1e9,
-                  Species_similarity_var=1e9,
-                  Dissimilarity_gap_var=1e9,
-                  beta_uniqueness_var=1e9,
-                  beta_redundancy_var=1e9,
-                  #
-                  Rao_beta=1e9,
-                  Rao_alpha=1e9
-    ))
-    
-    
-    
+    return(null_tibble)
+  }
+}
+
+
+Diversity_community_level=function(traits_site,id_traits=c(8:18)){
+  
+  
+  null_tibble=tibble(F_Richness_mean=1e9,
+                     #
+                     F_eveness_mean_weighted=1e9,
+                     F_Diversity_mean_weighted=1e9,
+                     F_Dispersion_mean_weighted=1e9,
+                     F_RaoQ_mean_weighted=1e9,
+                     # non weighted
+                     F_eveness_mean_non_weighted=1e9,
+                     F_Diversity_mean_non_weighted=1e9,
+                     F_Dispersion_mean_non_weighted=1e9,
+                     F_RaoQ_mean_non_weighted=1e9
+                     
+  )
+  
+  if (any(is.na(traits_site$Cover))){
+    traits_site$Cover[which(is.na(traits_site$Cover))]=0
   }
   
+  abundance=traits_site$Cover
+  names(abundance)=traits_site$Complete_name
+  
+  if (sum(abundance)>1){abundance=abundance/sum(abundance)} #relative abundance
+  
+  if (any(abundance==0)){ #remove non-present species
+    abundance=abundance[-which(abundance==0)]
+  }
+  
+  abundance=abundance[order(names(abundance))]
+  traits_site=traits_site%>%
+    add_column(., 
+               Name_sp=paste0(.$Genus," ",.$Species))%>%
+    dplyr::filter(., Name_sp %in% names(abundance))%>%
+    dplyr::arrange(., Name_sp) #sorting the tibble to match abundances in the abundance vector
+  
+  if (length(abundance) != nrow(traits_site)){ #meaning that a species has no recorded trait
+    abundance=abundance[-which(names(abundance) %!in% traits_site$Name_sp)] #we remove such species
+    if (sum(abundance)){ #in case we remove a species that was alone
+      abundance=sapply(abundance,function(x){return(NA)})
+    }else{
+      abundance=abundance/sum(abundance) # and rescale the abundances
+    }
+  }
+  traits_site$Cover[which(traits_site$Name_sp %in% names(abundance))]=abundance #change species relative abundance
+  traits_site=as.data.frame(traits_site)
+  
+  if (length(abundance)>1){#only one species
+    
+    # Order species and check for names in the rows
+    rownames(traits_site)=paste0(traits_site$Genus," ",traits_site$Species)
+    if (any(colSums(traits_site[,id_traits],na.rm = T)==0)){ #meaning only NA values
+      id_traits=id_traits[-which(colSums(traits_site[,id_traits],na.rm = T)==0)]
+    }
+    traits_site=traits_site%>%dplyr::arrange(., Name_sp)
+    abundance=abundance[order(names(abundance))]
+    
+    abundance=matrix(abundance,ncol=1)
+    rownames(abundance)=traits_site$Name_sp
+    colnames(abundance)="Site"
+    
+    
+    if (length(id_traits)>1){
+      #Removing species without traits
+      if (any(rowSums(traits_site[,id_traits],na.rm = T)==0)){
+        which_sp=which(rowSums(traits_site[,id_traits],na.rm = T)==0)
+        traits_site=traits_site[-which_sp,]
+        abundance=abundance[-which_sp,]
+        abundance=abundance/sum(abundance) #rescaling
+      }
+      
+      ## FUNCTIONAL DIV  
+      
+      #Functional diversity with FD, weighted by abundances
+      funct_div=try(dbFD(traits_site[,id_traits],t(abundance),w.abun = T,messages = F),silent = T)
+      
+      if (class(funct_div)=="try-error"){
+        funct_div=try(dbFD(traits_site[,id_traits],t(abundance),w.abun = T,messages = F,corr="cailliez"),silent = T)
+      }
+      if (class(funct_div)=="try-error"){
+        funct_div=list(
+          RaoQ=NA,
+          FRic=NA,
+          FEve=NA,
+          FDiv=NA,
+          FDis=NA
+        )
+      }
+      
+      if ("FDiv" %!in% names(funct_div)){
+        funct_div$FDiv=NA
+      }
+      
+      
+      #Functional diversity with FD, nonweighted by abundances
+      
+      funct_div_non_weighted=try(dbFD(traits_site[,id_traits],t(abundance),w.abun = F,messages = F),silent = T)
+      
+      if (class(funct_div_non_weighted)=="try-error"){
+        funct_div_non_weighted=try(dbFD(traits_site[,id_traits],t(abundance),w.abun = F,messages = F,corr="cailliez"),silent = T)
+      }
+      if (class(funct_div_non_weighted)=="try-error"){
+        funct_div_non_weighted=list(
+          RaoQ=NA,
+          FRic=NA,
+          FEve=NA,
+          FDiv=NA,
+          FDis=NA
+        )
+      }
+      
+      if ("FDiv" %!in% names(funct_div_non_weighted)){
+        funct_div_non_weighted$FDiv=NA
+      }
+      
+      return(tibble(F_Richness_mean=mean(funct_div$FRic,na.rm = T),
+                    #
+                    F_eveness_mean_weighted=mean(funct_div$FEve,na.rm = T),
+                    F_Diversity_mean_weighted=mean(funct_div$FDiv,na.rm = T),
+                    F_Dispersion_mean_weighted=mean(funct_div$FDis,na.rm = T),
+                    F_RaoQ_mean_weighted=mean(funct_div$RaoQ,na.rm = T),
+                    # non weighted
+                    F_eveness_mean_non_weighted=mean(funct_div_non_weighted$FEve,na.rm = T),
+                    F_Diversity_mean_non_weighted=mean(funct_div_non_weighted$FDiv,na.rm = T),
+                    F_Dispersion_mean_non_weighted=mean(funct_div_non_weighted$FDis,na.rm = T),
+                    F_RaoQ_mean_non_weighted=mean(funct_div_non_weighted$RaoQ,na.rm = T)
+      ))
+    }else{
+      return(null_tibble)
+    }
+  }else{ #only one species
+    return(null_tibble)
+  }
 }
+
 
 Life_form_quadrat=function(x,y){return(tibble(Woody=sum(y[which(x=="Wood")])/sum(y),
                                               Grass_woody=sum(y[which(x%in%c("Wood","Grass"))])/sum(y),
@@ -1394,7 +1595,7 @@ Add_PCA_traits=function(d){
   
   d_traits_norm=d%>%Closer_to_normality_traits(.)
   
-  struct_variables=colnames(d_traits_norm)[7:16]
+  struct_variables=colnames(d_traits_norm)[8:18]
   res.comp=imputePCA(d_traits_norm[,which(colnames(d_traits_norm) %in% struct_variables)],ncp=4,scale = T) 
   
   if ("completeObs" %in% names(res.comp)){
