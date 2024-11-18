@@ -24,13 +24,8 @@ source(Structure_grazing_function.R)
 ## `Replicating the analyses`
 
 People interested in directly replicating the figures can go to "**Replicating the figures**" since we provide all the generated data.
-The main script (`Structure_grazing_function.R`) is organized in independant chunk of codes that can be seen easily with Rstudio by pressing *Alt+O*. It allows to replicate all statistical analyses of the paper.
-
-### Step 4: Comparison to other models 
-
-Last, to replicate the comparison of our approach with other models, we provide a complete framework through a *bash (.sh)* file in `./Data/Model_confirmation_Guichard` and `./Data/Model_confirmation_Kefi`.
-The framework draws the parameters, performs the simulations with the two models, infers the parameters, and estimates the distance to the tipping point by our approach and in the two models (mussel-bed and dryland vegetation). 
-Then, to postprocess these simulations, you can run Step 7 of the `ABC_drylands_main.R` file.
+The main script (`Structure_grazing_main.R`) is organized in independant chunk of codes (Steps 1 to 6) that can be seen easily with Rstudio by pressing *Alt+O*. It allows to replicate all statistical analyses of the paper.
+It includes the scripts for the simulations.
 
 ## `Replicating the figures`
 
