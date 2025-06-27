@@ -26,6 +26,7 @@ source(Structure_grazing_function.R)
 People interested in directly replicating the figures can go to "**Replicating the figures**" since we provide all the generated data.
 The main script (`Structure_grazing_main.R`) is organized in independant chunk of codes (Steps 1 to 6) that can be seen easily with Rstudio by pressing *Alt+O*. It allows to replicate all statistical analyses of the paper.
 It includes the scripts for the simulations.
+Note that all images are available in the Data/Images folder. The image corresponding to each line of the dataset can be found using the ID and Sub_id columns of the dataset.
 
 ## `Replicating the figures`
 

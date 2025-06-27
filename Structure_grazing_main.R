@@ -244,7 +244,6 @@ Run_model_importance=function(id){
   d_data=read.table("./Data/Spatial_structure_grazing.csv",sep=";")%>%
     Closer_to_normality(.)%>%Perform_PCA_spatial_struc(.)
   
-  
   d_data=Perform_PCA_spatial_struc(d_data)
   
   stat=list_mod$Stats[id]

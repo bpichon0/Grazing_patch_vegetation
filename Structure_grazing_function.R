@@ -46,14 +46,14 @@ scale_values=function(x){return((x-mean(x,na.rm=T))/sd(x, na.rm = T))}
 `%!in%` = Negate(`%in%`)
 
 is_signif=function(x){
-  if (x<.001){
-    return("***")
-  }else if (x>.001 & x<.01){
-    return("**")
+  if (x<=.001){
+    return("*")
+  }else if (x>.001 & x<=.01){
+    return("*")
   }else if (x>.01 & x<.05){
     return("*")
-  }else if (x>.05 & x<.1){
-    return(".")
+  # }else if (x>.05 & x<.1){
+  #   return("°")
   }else {
     return("")
   }
@@ -91,7 +91,6 @@ Add_temperature_precip=function(d){
 
 rotate=function(x) t(apply(x, 2, rev))
 
-
 Plot_lanscape=function(mat){
   
   if (mat[1,1] %in% c(F,T)){
@@ -126,13 +125,12 @@ Plot_psd_raw=function(landscape){
   })
   return(ggplot(psd_tibble)+
           geom_point(aes(x=patch_size,y=freq))+
-          the_theme+
+          the_theme2+
           labs(x="Patch size",y="Number of patches")+
-          scale_x_log10()+
-          scale_y_log10())
+          scale_x_log10(limits=c(1,1000))+
+          scale_y_log10(limits=c(1,1000)))
   
 }
-
 
 myTryCatch=function(expr) {
   #' Catches errors and warnings in evaluation of expr

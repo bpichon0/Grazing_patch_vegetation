@@ -35,6 +35,9 @@ d_slope=read.table("./Data/Linear_models_factor_cover_control/Slope_partial_resi
                                "Spatial autocorrelation of vege."="Spatial autocorr. \n of vege.",
                                "Power-law exp. of the PSD"="Power-law exponent \n of the PSD"))
 
+d_slope$Driver[which(d_slope$Driver=="MAT")]="Temperature"
+
+d_slope$Signif2=sapply(1:nrow(d_slope),function(x){return(is_signif(d_slope$pval[x]))})
 
 p1=ggplot(d_slope)+
   geom_vline(xintercept = 0,linetype=9)+
@@ -45,10 +48,9 @@ p1=ggplot(d_slope)+
                  lwd=.5,position=position_jitterdodge(seed=123))+  
   geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(ID_grazing)),color="transparent",
                   size=.15,position=position_jitterdodge(seed=123),shape=21)+  
-  
   the_theme2+
   scale_color_manual(values=c("#FBD2A5","#FF8888","#C17F9D","grey","grey"),
-                     labels=c("Low grazing (1)","Medium grazing (2)","High grazing (3)","Aridity & MAT"))+
+                     labels=c("Low grazing (1)","Medium grazing (2)","High grazing (3)","Aridity & Temperature"))+
   scale_fill_manual(values=c("grey20","grey20","grey20","grey20","grey20"))+
   scale_shape_manual(values=c(21,16))+
   labs(x=substitute(paste(beta," (partial residuals)")),y="",color="")+
@@ -59,6 +61,14 @@ p1=ggplot(d_slope)+
         legend.text = element_text(size=8))+
   guides(color=guide_legend(ncol=4))+
   theme(legend.position="bottom")#c(.2,.65))
+
+legend_p1=get_legend(p1+theme(legend.text = element_text(size=11)))
+
+p1=p1+geom_text(aes(x=.45,y=Stat,label=Signif2,
+                    color=as.factor(ID_grazing)),
+                size=5,shape=21,position=position_jitterdodge(seed=123))
+  
+
 
 d_slope=read.table("./Data/Linear_models_factor_cover_control/Slope_partial_residuals_aridity.csv",sep=";")%>%
   dplyr::filter(., With_cover==0,Grazing_intensity=="all",Stat=="Struct1",Driver!="Herbivores")%>%
@@ -84,6 +94,7 @@ d_slope=read.table("./Data/Linear_models_factor_cover_control/Slope_partial_resi
     }
   }))
 
+d_slope$Signif2=sapply(1:nrow(d_slope),function(x){return(is_signif(d_slope$pval[x]))})
 
 p2=ggplot(d_slope%>%mutate(., Type_stat=""))+
   geom_vline(xintercept = 0,linetype=9)+
@@ -97,7 +108,7 @@ p2=ggplot(d_slope%>%mutate(., Type_stat=""))+
   
   the_theme2+
   scale_color_manual(values=c("#FBD2A5","#FF8888","grey","#C17F9D"),
-                     labels=c("Low grazing (1)","Medium grazing (2)","High grazing (3)","Aridity & MAT"))+
+                     labels=c("Low grazing (1)","Medium grazing (2)","High grazing (3)","Aridity & Temperature"))+
   scale_fill_manual(values=c("grey20","grey20","grey20","grey20"))+
   scale_shape_manual(values=c(21,16))+
   labs(x=substitute(paste(beta," (partial residuals)")),y="",color="")+
@@ -109,13 +120,20 @@ p2=ggplot(d_slope%>%mutate(., Type_stat=""))+
   guides(color=guide_legend(ncol=4))+
   theme(legend.position="none")#c(.2,.65))
 
-p_tot=ggarrange(
-  p1+theme(axis.text.y = element_text(size=10),legend.text = element_text(size=11))
-    ,ggarrange(ggplot()+theme_void(),
-                             p2+theme(axis.text.y = element_text(size=10))
-                  ,ggplot()+theme_void(),ncol=3,widths = c(.7,1.2,.5)),nrow = 2,labels = letters[1:2],heights = c(1,.25))
+p2=p2+geom_text(aes(x=.45,y=Stat,label=Signif2,
+                    color=as.factor(ID_grazing)),
+                size=5,shape=21,position=position_jitterdodge(seed=123))
 
-ggsave("./Figures/Grazing_intensity_partial_residuals.pdf",p_tot,width = 8.1,height = 6)
+
+p_tot=ggarrange(
+  ggarrange(p1+theme(axis.text.y = element_text(size=10),legend.position = "none"),
+            legend_p1,nrow=2,heights = c(1,.2))
+  ,ggarrange(ggplot()+theme_void(),
+             p2+theme(axis.text.y = element_text(size=10))
+             ,ggplot()+theme_void(),ncol=3,widths = c(.7,1.2,.5)),nrow = 2,labels = letters[1:2],heights = c(1,.25))
+
+
+ggsave("./Figures/Grazing_intensity_partial_residuals.pdf",p_tot,width = 8,height = 6)
 
 
 ## >> Figure 3: Illustrating the effects with simulations ----
@@ -143,10 +161,10 @@ p1=ggplot(d_slope)+
   geom_point(aes(x=q2,y=Stat,fill=Cover,color=Cover,shape=shape_),size=5)+  
   the_theme2+
   labs(x=substitute(paste(beta," increasing grazing over aridity")),y="",color="")+
-  scale_fill_manual(values=rev(c("lightgreen","forestgreen","#025a2a")),
-                    labels=rev(c("Low cover","Medium over","High cover")))+
-  scale_color_manual(values=rev(c("lightgreen","forestgreen","#025a2a")),
-                     labels=rev(c("Low cover","Medium over","High cover")))+
+  scale_fill_manual(values=rev(c("#C3F5C3","#4BAD4B","#054221")),
+                    labels=rev(c("Low cover","Medium cover","High cover")))+
+  scale_color_manual(values=rev(c("#C3F5C3","#4BAD4B","#054221")),
+                     labels=rev(c("Low cover","Medium cover","High cover")))+
   scale_shape_manual(values=rev(c(23,21)))+
   guides()+
   facet_grid(Type_stat ~ ., space = "free_y", 
@@ -187,23 +205,23 @@ for (cover_id in 1:3){
 }
 
 p_landscapes=ggarrange(p13+
-                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2)),
                        p12+
-                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2)),
                        p11+
-                         theme(panel.border = element_rect(colour = "#025a2a",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2)),
                        p23+
-                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2)),
                        p22+
-                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2)),
                        p21+
-                         theme(panel.border = element_rect(colour = "forestgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2)),
                        p33+
-                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2)),
                        p32+
-                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2)),
                        p31+
-                         theme(panel.border = element_rect(colour = "lightgreen",fill=NA,size=2)),
+                         theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2)),
                        nrow=3,ncol=3)
 p_arrow_top=ggplot(NULL) + 
   geom_line(data=tibble(x=c(0,1),y=c(1,1)),
@@ -323,7 +341,7 @@ d_indirect=tibble(
   Indirect=c(0,0,0,AI_size_I,MAT_size_I,Grazing_size_I,AI_DevLS_I,MAT_DevLS_I,Grazing_DevLS_I,AI_PC1,MAT_PC1,Grazing_PC1),
   Direct=c(AI_woody,MAT_woody,Grazing_woody,AI_size_D,MAT_size_D,Grazing_size_D,AI_DevLS_D,MAT_DevLS_D,Grazing_DevLS_D,0,0,0),
   Total=c(AI_woody,MAT_woody,Grazing_woody,AI_size_T,MAT_size_T,Grazing_size_T,AI_DevLS_T,MAT_DevLS_T,Grazing_DevLS_T,AI_PC1,MAT_PC1,Grazing_PC1),
-  Effect=rep(c("Aridity","MAT","Grazing"),4),
+  Effect=rep(c("Aridity","Temperature","Grazing"),4),
   Response=c(rep("% of Woody",3),rep("Average plant size (cLS)",3),rep("Trait spatial aggregation (DevLS)",3),rep("PC 1 sp. struct.",3))
 )%>%melt(., id.vars=c("Effect","Response"))
 
@@ -341,9 +359,8 @@ for (k in 1:4){
                              geom_hline(yintercept = 0)+
                              facet_wrap(.~Response,scales = "free")+
                              coord_flip()+
-                             labs(x="Effect size",y="",color="")+
-                             guides(fill="none")+
-                             scale_fill_manual(values=c("#FFE699","#F3A875","#DBD600"))
+                             labs(x="Effect size",y="",color="",fill="")+
+                             scale_fill_manual(values=c("#FFE699","#F3A875","#A97858"))
          
          )
 }
@@ -351,14 +368,17 @@ for (k in 1:4){
 
 p_tot=ggarrange(
   ggarrange(p22+theme(panel.border = element_rect(color="#A8D18F",size=1),
-                      axis.line = element_line(color="#A8D18F",size=1)),
+                      axis.line = element_line(color="#A8D18F",size=1),
+                      legend.position = "none"),
             p21+theme(panel.border = element_rect(color="#A8D18F",size=1),
-                      axis.line = element_line(color="#A8D18F",size=1)),ncol=2,widths = c(1,.5)),
+                      axis.line = element_line(color="#A8D18F",size=1),
+                      legend.position = "none"),ncol=2,widths = c(1,.5)),
   ggarrange(p23+theme(panel.border = element_rect(color="#A8D18F",size=1),
                       axis.line = element_line(color="#A8D18F",size=1)),
             p24+theme(panel.border = element_rect(color="#C376EF",size=1),
-                      axis.line = element_line(color="#C376EF",size=1)),ncol=2,widths = c(1,.5)),
-  nrow=2
+                      axis.line = element_line(color="#C376EF",size=1)),
+            ncol=2,widths = c(1,.5),legend = "bottom",common.legend = T),
+  nrow=2,heights = c(1,1.1)
 )
 p_tot=ggarrange(ggplot()+theme_void(),p_tot,ncol=2,widths =  c(1,.8),labels = letters[1:2])
 ggsave("./Figures/SEM_traits_spatial_structure.pdf",p_tot,width = 12,height = 6)
@@ -397,6 +417,8 @@ d_slope=read.table("./Data/Linear_models_factor_cover_control/Slope_partial_resi
                                "Spatial autocorrelation of vege."="Spatial autocorr. \n of vege.",
                                "Power-law exp. of the PSD"="Power-law exponent \n of the PSD"))
 
+d_slope$Signif2=sapply(1:nrow(d_slope),function(x){return(is_signif(d_slope$pval[x]))})
+  
 p=ggplot(d_slope)+
   geom_vline(xintercept = 0,linetype=9)+
   
@@ -406,7 +428,6 @@ p=ggplot(d_slope)+
                  lwd=.5,position=position_jitterdodge(seed=123))+  
   geom_pointrange(aes(x=q2,y=Stat,xmin=q1,xmax=q3,fill=as.factor(ID_grazing)),color="transparent",
                   size=.15,position=position_jitterdodge(seed=123),shape=21)+  
-  
   the_theme2+
   scale_fill_manual(values=c("grey20","grey20","grey20","grey20"))+
   scale_shape_manual(values=c(21,16))+
@@ -418,11 +439,14 @@ p=ggplot(d_slope)+
   scale_color_manual(values=c("orange","violet","lightblue"))+
   facet_grid(Type_stat ~ ., space = "free_y", 
              scale = "free_y")
+
+legend_p=get_legend(p)
+
+p_tot=p+geom_text(aes(x=.45,y=Stat,label=Signif2,color=as.factor(ID_grazing)),
+                    size=4,shape=21,position=position_jitterdodge(seed=123)) +
+  theme(legend.position = "none")
   
-
-
-p_tot=p
-ggsave("./Figures/Type_herbivores.pdf",p_tot,width = 5,height = 5)
+ggsave("./Figures/Type_herbivores.pdf",ggarrange(p_tot,legend_p,nrow=2,heights = c(1,.06)),width = 5,height = 5)
 
 
 # -------------------- SI figures ---------------------------
@@ -941,40 +965,45 @@ ggsave("./Figures/SI/Grazing_intensity_partial_residuals_without_cover.pdf",p_to
 list_landscape=readRDS("./Data/Minimal_examples_stats_landscapes.rds")
 d=read.table("./Data/Minimal_examples_stats.csv",sep=";")
 
-
 id=1
-for (cover_id in 1:3){
-  for (aggregation_id in 1:3){
+for (aggregation_id in 1:3){
+  for (cover_id in 1:3){
     assign(paste0("p_psd",cover_id,aggregation_id),
-           Plot_psd_raw(list_landscape[[id]])+
-             scale_y_log10(limits=c(1,1000)))
+           Plot_psd_raw(list_landscape[[id]]))
     id=id+1
   }
 }
 
-
 p_psd=ggarrange(
   p_psd11+ggtitle("Cover = 0.65, \nHigh asso. protection")+
-    theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2))
+  ,
   p_psd12+ggtitle("Cover = 0.65, \nMedium asso. protection")+
-    theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2))
+  ,
   p_psd13+ggtitle("Cover = 0.65, \nNo asso. protection")+
-    theme(panel.border = element_rect(colour = "#D27C3F",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#054221",fill=NA,size=2))
+  ,
   # p_psd41+ggtitle("Cover = 0.65, n random"),
   p_psd21+ggtitle("Cover = 0.35, \nHigh asso. protection")+
-    theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2))
+  ,
   p_psd22+ggtitle("Cover = 0.35, \nMedium asso. protection")+
-    theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2))
+  ,
   p_psd23+ggtitle("Cover = 0.35, \nNo asso. protection")+
-    theme(panel.border = element_rect(colour = "#8BD882",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#4BAD4B",fill=NA,size=2))
+  ,
   # p_psd42+ggtitle("Cover = 0.35, n random"),
   p_psd31+ggtitle("Cover = 0.17, \nHigh asso. protection")+
-    theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2))
+  ,
   p_psd32+ggtitle("Cover = 0.17, \nMedium asso. protection")+
-    theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
+    theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2))
+  ,
   p_psd33+ggtitle("Cover = 0.17, \nNo asso. protection")+
-    theme(panel.border = element_rect(colour = "#BE91D0",fill=NA,size=2)),
-  # p_psd43+ggtitle("Cover = 0.17, \n random"),
+    theme(panel.border = element_rect(colour = "#C3F5C3",fill=NA,size=2))
+  ,
   nrow=3,ncol=3)
 
 ggsave("./Figures/SI/Examples_stat_toy_PSD.pdf",p_psd,width = 9,height = 8)
@@ -1188,3 +1217,97 @@ ggsave("./Figures/SI/Distribution_traits_grazing_aridity.pdf",
 
 
 
+
+## >> Consequence resilience ----
+
+d=read.table("../Data/Simulations/All_simulations_PA.csv",sep=";")%>%
+  add_column(., Cover_binary=.$Cover>0.03)%>%
+  mutate(., 
+         g0=rep(seq(0,.3,length.out=50),each=100),
+         b=rep(rep(rev(seq(0,1,length.out=50)),each=2),50))
+d$Cover[is.na(d$Cover)]="Desert"
+d$Type_cover="Normal"
+d$Type_cover[which(d$Cover=="Desert")]="Desert"
+d$Cover[d$Cover %in% c("Vegetation","Desert")]=NA
+d$Cover=as.numeric(d$Cover)
+
+d_restor=d%>%dplyr::filter(.,Branch=="Restoration")
+d_bistab=d%>%dplyr::filter(.,Branch=="Degradation")%>%
+  add_column(., Bistab=sapply(1:nrow(.),function(x){
+    if (.$Cover_binary[x]==d_restor$Cover_binary[x]){
+      return("No")
+    }else{
+      return("Yes")
+    }
+  }))
+
+
+d_bistab$Cover[d_bistab$Cover==0]=NA
+
+size_bistab=sapply(unique(d$g0),function(x){
+  d_fil=dplyr::filter(d_bistab,g0==x)
+  return(ifelse(any(d_fil$Bistab=="Yes"),table(d_fil$Bistab)[2]/50,0))
+})
+
+cover_desert=sapply(unique(d$g0),function(x){
+  d_fil=dplyr::filter(d_bistab,g0==x)
+  return(d_fil$Cover[min(which(is.na(d_fil$Cover)))-1])
+})
+
+
+p1=ggplot(tibble(size_bistab=size_bistab,g0=unique(d$g0)))+
+  geom_smooth(aes(x=g0,y=size_bistab),size=3,fill="lightblue",color="lightblue")+
+  labs(x="Increasing spatially \n heterogeneous mortality",y="Width of the \n bistability region")+
+  the_theme2+
+  theme(axis.ticks = element_blank(),axis.text = element_blank(),axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14))
+
+p2=ggplot(tibble(cover_desert=cover_desert,g0=unique(d$g0)))+
+  geom_smooth(aes(x=g0,y=cover_desert),size=3,fill="lightblue",color="lightblue")+
+  labs(x="Increasing spatially \n heterogeneous mortality",y="Vegetation cover at \n the desertification point")+
+  the_theme2+
+  theme(axis.ticks = element_blank(),axis.text = element_blank(),axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14))
+
+p3=ggplot(NULL)+
+  geom_point(data=d%>%dplyr::filter(g0==.0),
+             aes(x=1-b,Cover),shape=21,size=2,fill="lightblue",color="black")+
+  the_theme2+
+  labs(x="Abiotic stress",y="Vegetation \n cover")+
+  theme(axis.ticks.x = element_blank(),axis.text.x = element_blank(),axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14),legend.title = element_text(size = 14))+
+  # annotate("text",x=.75,y=.9,label="Spatially homogeneous \n stress",size=5)+
+  ylim(0,1)
+
+p4=ggplot(NULL)+
+  geom_point(data=d%>%dplyr::filter(g0==.3),
+             aes(x=1-b,Cover),shape=21,size=2,fill="lightblue",color="black")+
+  the_theme2+
+  labs(x="Abiotic stress",y="Vegetation \n cover")+
+  theme(axis.ticks.X = element_blank(),axis.text.X = element_blank(),axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14),legend.title = element_text(size = 14))+
+  # annotate("text",x=.75,y=.9,label="Spatially heterogeneous \n stress",size=5)+
+  ylim(0,1)
+
+
+p0=ggplot(NULL)+
+  geom_tile(data=d_bistab,
+            aes(x=1-b,g0,fill=Cover))+
+  scale_fill_viridis_c(option = "G",na.value = "#D8C0A5")+
+  the_theme2+
+  labs(x="Abiotic stress",y="Increasing spatially \n heterogeneous mortality",
+       fill="Vegetation \n    cover")+
+  theme(axis.ticks = element_blank(),axis.text = element_blank(),axis.title.x = element_text(size=14),
+        axis.title.y = element_text(size=14),legend.title = element_text(size = 14))+
+  annotate("text",x=.75,y=.15,label="No vegetation",size=5)+
+  geom_hline(yintercept = c(0,.3))+
+  annotate("text",x=c(1,1),y=c(0.02,.32),label=c("b","c"),size=5)
+  
+
+
+p_tot=ggarrange(ggarrange(p0,
+                          ggarrange(p3+theme(axis.title.x = element_blank()),p4,nrow=2,labels = c("b","c"),font.label = list(size=22)),
+                          ncol=2,labels = c("a",""),font.label = list(size=22),widths = c(1,.7)),
+                ggarrange(p2,p1,ncol=2,labels = c("d","e"),font.label = list(size=22)),
+                nrow = 2,heights = c(1,.8))
+ggsave("./Figures/SI/Consequence_resilience.pdf",p_tot,width = 8,height = 8)
