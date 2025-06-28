@@ -248,6 +248,151 @@ get_cut_grayscale_values = function(nclust) {
   return(cut)
 }
 
+Get_sumstat=function(landscape,log_=T,slope=0,compute_KS=T){
+  
+  
+  if (any(landscape==1 |landscape==T)){
+    
+    cover = sum(landscape) / (dim(landscape)[1]**2)
+    
+    # number of neighbors
+    #vegetation clustering
+    neighbors_mat = simecol::neighbors(x =landscape,state = 1, wdist =  matrix( c(0, 1, 0,1, 0, 1, 0, 1, 0), nrow = 3),bounds = 1)
+    mean_nb_neigh = mean(neighbors_mat[which(landscape == 1)]) #mean number of plant neighbors
+    mean_clustering = mean_nb_neigh / cover
+    spatial_ews = generic_sews(landscape>0,4,moranI_coarse_grain = T)$value
+    
+    spectral_ratio = as.data.frame(spectral_sews(landscape>0,quiet=T))$value
+    
+    psd=spatialwarnings::patchdistr_sews(landscape>0)
+    max_patchsize=max(psd$psd_obs)
+    cv_patch=sd(psd$psd_obs)/mean(psd$psd_obs)
+    PLR=spatialwarnings::raw_plrange(landscape>0)
+    
+    Small_patches=table(patchsizes(landscape>0))[1]
+    Small_patches_fraction=table(patchsizes(landscape>0))[1]/sum(table(patchsizes(landscape>0)))
+    
+    fit_psd=safe_psd_types(psd$psd_obs)
+    
+    if (log_){
+      mean_clustering=log(mean_clustering)
+      spectral_ratio=log(spectral_ratio)
+      max_patchsize=log(max_patchsize/length(landscape))
+    }
+    
+    if (compute_KS){
+      if(length(psd$psd_obs>0)){
+        ks_dist  = Get_KS_distance(landscape>0,n_shuffle = 199)
+      }else{
+        ks_dist  = NA
+      }
+    }else{
+      ks_dist=NA
+    }
+    
+    #flow length
+    flow_length=flowlength_sews(landscape>0,slope = slope,
+                                cell_size = 50/sqrt(dim(landscape)[1]*dim(landscape)[2]))
+    
+    #power relationship between area and perimeter
+    beta=lsm_c_pafrac(raster(landscape), directions = 8, verbose = TRUE)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #mean perimeter-area ratio 
+    mean_perim_area=lsm_c_para_mn(raster(landscape), directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #median, mean, sd of patch size (not in pixel unit but in m? to account for differences in resolutions)
+    psd_scaled=lsm_p_area(raster(landscape),directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    mean_psd=mean(psd_scaled)*1e4 #1e4 is to convert from ha to m?
+    median_psd=median(psd_scaled)*1e4 #1e4 is to convert from ha to m?
+    sd_psd=sd(psd_scaled)*1e4 #1e4 is to convert from ha to m?
+    
+    #core area metric
+    core_area=lsm_c_cai_mn(raster(landscape),directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    core_area_land=lsm_c_cpland(raster(landscape),directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #division of patches
+    division=lsm_c_division(raster(landscape), directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #fractal dimension 
+    fractal_dim=lsm_c_frac_mn(raster(landscape), directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #contig
+    contig=lsm_c_contig_mn(raster(landscape),directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #shape
+    Shape_metric=lsm_c_shape_mn(raster(landscape),directions = 8)%>%dplyr::filter(., class==1)%>%pull(., value)
+    
+    #All complexity measures at the landscape scale
+    
+    complex_land=calculate_lsm(raster(landscape), 
+                               what = c("lsm_l_ent", "lsm_l_condent", "lsm_l_joinent","lsm_l_mutinf","lsm_l_relmutinf"),
+                               full_name = TRUE,directions = 8,neighbourhood = 4)%>%
+      dplyr::select(., value,name)
+    
+    Hx=lsm_l_ent(raster(landscape),neighbourhood = 4)%>%pull(., value)
+    
+    
+    d=tibble(rho_p=cover,
+             nb_neigh=mean_nb_neigh,clustering=mean_clustering,
+             skewness=spatial_ews[2],variance=spatial_ews[1],moran_I=spatial_ews[3],
+             Spectral_ratio=spectral_ratio,PLR=PLR,PL_expo=fit_psd["slope_best"],cv_psd=cv_patch,
+             fmax_psd=max_patchsize,cutoff=fit_psd["cutoff_tpl"],slope_tpl=fit_psd["slope_tpl"],
+             flow_length=flow_length$value, #flow length
+             perim_area_scaling=beta, #scaling power relationship between area and perimeter 
+             mean_perim_area=mean_perim_area, #mean perim/area 
+             mean_psd=mean_psd, #mean patch size
+             median_psd=median_psd, #median patch size
+             Small_patches=Small_patches, #number of smaller patches
+             Small_patches_fraction=Small_patches_fraction, #number of smaller patches
+             sd_psd=sd_psd, #sd patch size
+             KS_dist=ks_dist, #Kolmogorov distance with null expectation
+             core_area=core_area, #mean % of core area
+             core_area_land=core_area_land,  #same but at the landscape scale
+             division=division, #how much patches are divided or constitute big patches
+             fractal_dim=fractal_dim, #fractal dimension
+             contig=contig, #mean connectedness of cells in patches
+             Shape_metric=Shape_metric,#shape of vegetation patches
+             Cond_H=complex_land$value[1], #conditional entropy
+             Shannon_H=complex_land$value[2], #shannon entropy
+             Joint_H=complex_land$value[3], #joint entropy
+             mutual_inf=complex_land$value[4], #mutual information
+             relat_mutual_inf=complex_land$value[5] #relative mutual information
+    )
+  }else{
+    d=tibble(rho_p=0,
+             nb_neigh=0,
+             clustering=0,
+             skewness=0,variance=0,moran_I=0,
+             Spectral_ratio=0,PLR=0,PL_expo=0,cv_psd=0,
+             fmax_psd=0,cutoff=0,slope_tpl=0,
+             flow_length=0,
+             perim_area_scaling=0,
+             mean_perim_area=0,
+             mean_psd=0,
+             median_psd=0,
+             Small_patches=0,
+             Small_patches_fraction=0, 
+             sd_psd=0,
+             KS_dist=0,
+             core_area=0,
+             core_area_land=0,
+             division=0,
+             fractal_dim=0,
+             contig=0,
+             Shape_metric=0,
+             Cond_H=0,
+             Shannon_H=0,
+             Joint_H=0,
+             mutual_inf=0,
+             relat_mutual_inf=0
+    )
+    
+    
+  }
+  
+  return(d)
+}
 
 # 3) Spatial metrics functions ----
 
